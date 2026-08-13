@@ -34,13 +34,27 @@ import {
   type AdminAdSlide,
   type ServicesCatalog,
 } from "@/lib/admin";
+import * as Haptics from "expo-haptics";
+
 import type { ProviderAccount } from "@/lib/provider-registry";
+import {
+  addWalletEntry,
+  getWalletSummaries,
+  getWalletSummary,
+  removeWalletEntry,
+  validateNewWalletEntry,
+  type LedgerEntryKind,
+  type LedgerEntryType,
+  type NewWalletEntry,
+  type WalletSummary,
+  type WalletLedgerEntry,
+} from "@/lib/wallets";
 import {
   getPatientProfile,
   readMedicalAccessGrants,
   revokeMedicalAccess,
 } from "@/lib/patient-profile";
-type AdminTabId = "summary" | "providers" | "ads" | "services" | "requests" | "patients";
+type AdminTabId = "summary" | "providers" | "ads" | "services" | "requests" | "patients" | "wallets";
 
 const OLIVE = "#6B7B3F";
 const GOLD = "#C9A961";
@@ -119,6 +133,7 @@ export default function AdminScreen() {
             { id: "services", title: "الخدمات", icon: "apps" },
             { id: "requests", title: "الطلبات", icon: "swap-horiz" },
             { id: "patients", title: "المرضى", icon: "people" },
+            { id: "wallets", title: "المحفظات", icon: "account-balance-wallet" },
           ] as { id: AdminTabId; title: string; icon: string }[]
         ).map((item) => (
           <TouchableOpacity
@@ -139,6 +154,7 @@ export default function AdminScreen() {
         {tab === "services" ? <ServicesPanel /> : null}
         {tab === "requests" ? <RequestsPanel /> : null}
         {tab === "patients" ? <PatientsPanel /> : null}
+        {tab === "wallets" ? <WalletsPanel /> : null}
       </View>
     </ScreenContainer>
   );
@@ -703,6 +719,356 @@ function PatientsPanel() {
   );
 }
 
+// ───────────────────── المحفظات ─────────────────────
+
+function WalletsPanel() {
+  const [role, setRole] = useState<"patient" | "provider">("patient");
+  const [summaries, setSummaries] = useState<WalletSummary[]>([]);
+  const [form, setForm] = useState<NewWalletEntry>({
+    ownerId: "",
+    ownerName: "",
+    role: "patient",
+    kind: "credit",
+    type: "recharge",
+    amount: 0,
+    description: "",
+    reference: "",
+  });
+  const [formError, setFormError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    setSummaries(await getWalletSummaries(role));
+  }, [role]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const patientKinds = [
+    { kind: "credit" as const, type: "recharge" as const, label: "شحن رصيد" },
+    { kind: "debit" as const, type: "payment" as const, label: "دفع مقابل خدمة" },
+    { kind: "credit" as const, type: "refund" as const, label: "استرداد للمريض" },
+  ];
+  const providerKinds = [
+    { kind: "credit" as const, type: "earned" as const, label: "مستحق له" },
+    { kind: "debit" as const, type: "charge" as const, label: "مستحق عليه" },
+  ];
+  const kindOptions = role === "patient" ? patientKinds : providerKinds;
+
+  const setAmount = (value: string) => {
+    const numeric = Number(value.replace(/[^0-9.]/g, ""));
+    setForm((prev) => ({ ...prev, amount: Number.isFinite(numeric) ? numeric : 0 }));
+  };
+
+  const applyKind = (option: { kind: LedgerEntryKind; type: LedgerEntryType; label: string }) => {
+    setForm((prev) => ({ ...prev, kind: option.kind, type: option.type }));
+  };
+
+  const submitAdd = async () => {
+    const error = validateNewWalletEntry(form);
+    setFormError(error);
+    if (error) return;
+    if (busy) return;
+    setBusy(true);
+    try {
+      await addWalletEntry(form);
+      setForm((prev) => ({ ...prev, description: "", reference: "", amount: 0 }));
+      setSummaries(await getWalletSummaries(role));
+      if (Platform.OS !== "web") {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+    } catch (error) {
+      Alert.alert("تعذّر الإضافة", error instanceof Error ? error.message : "حدث خطأ غير متوقع.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirmRemove = (entry: WalletLedgerEntry) => {
+    Alert.alert(
+      "حذف القيد",
+      `هل تريد حذف قيد بقيمة ${entry.amount.toFixed(2)} من محفظة «${entry.ownerName}»؟`,
+      [
+        { text: "إلغاء", style: "cancel" },
+        {
+          text: "حذف",
+          style: "destructive",
+          onPress: async () => {
+            await removeWalletEntry(entry.id);
+            setSummaries(await getWalletSummaries(role));
+          },
+        },
+      ],
+    );
+  };
+
+  return (
+    <View style={styles.panel}>
+      <Text style={styles.panelTitle}>المحفظة المحاسبية</Text>
+      <Text style={styles.panelHint}>
+        سجل محاسبي لمحفظة المريض (شحن/دفع/استرداد) ومحفظة مقدم الخدمة (مستحق له/مستحق عليه). الرصيد التجميعي يُحسب من القيود.
+      </Text>
+
+      {/* تبديل بين محفظة المريض والشريك */}
+      <View style={styles.positionRow}>
+        <TouchableOpacity
+          style={[styles.roleSwitch, role === "patient" && styles.roleSwitchActive]}
+          onPress={() => {
+            setRole("patient");
+            setForm((prev) => ({ ...prev, role: "patient" }));
+          }}
+          activeOpacity={0.7}
+        >
+          <Text style={[styles.roleSwitchText, role === "patient" && styles.roleSwitchActiveText]}>محفظة المريض</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.roleSwitch, role === "provider" && styles.roleSwitchActive]}
+          onPress={() => {
+            setRole("provider");
+            setForm((prev) => ({ ...prev, role: "provider" }));
+          }}
+          activeOpacity={0.7}
+        >
+          <Text style={[styles.roleSwitchText, role === "provider" && styles.roleSwitchActiveText]}>محفظة الشريك</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* نموذج إضافة قيد يدوي */}
+      <View style={styles.formCard}>
+        <Text style={styles.formSectionTitle}>إضافة قيد محاسبي يدوي</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="اسم صاحب المحفظة"
+          placeholderTextColor="#B7AFA0"
+          value={form.ownerName}
+          onChangeText={(value) => setForm((prev) => ({ ...prev, ownerName: value }))}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder={role === "patient" ? "رقم الهاتف (معرّف المريض)" : "معرّف مقدم الخدمة"}
+          placeholderTextColor="#B7AFA0"
+          value={form.ownerId}
+          onChangeText={(value) => setForm((prev) => ({ ...prev, ownerId: value }))}
+          keyboardType="phone-pad"
+        />
+        <View style={styles.kindRow}>
+          {kindOptions.map((option) => {
+            const active = form.kind === option.kind && form.type === option.type;
+            return (
+              <TouchableOpacity
+                key={option.type}
+                style={[styles.kindChip, active && styles.kindChipActive]}
+                onPress={() => applyKind(option)}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.kindChipText, active && styles.kindChipActiveText]}>{option.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+        <View style={styles.amountRow}>
+          <TextInput
+            style={[styles.input, styles.amountInput]}
+            placeholder="المبلغ"
+            placeholderTextColor="#B7AFA0"
+            value={form.amount ? String(form.amount) : ""}
+            onChangeText={setAmount}
+            keyboardType="decimal-pad"
+          />
+          <TextInput
+            style={[styles.input, { flex: 1 }]}
+            placeholder="الوصف"
+            placeholderTextColor="#B7AFA0"
+            value={form.description}
+            onChangeText={(value) => setForm((prev) => ({ ...prev, description: value }))}
+          />
+          <TextInput
+            style={[styles.input, { flex: 1 }]}
+            placeholder="مرجع (اختياري)"
+            placeholderTextColor="#B7AFA0"
+            value={form.reference ?? ""}
+            onChangeText={(value) => setForm((prev) => ({ ...prev, reference: value }))}
+          />
+        </View>
+        {formError ? <Text style={styles.formError}>{formError}</Text> : null}
+        <TouchableOpacity
+          style={[styles.primaryButton, busy && { opacity: 0.6 }]}
+          onPress={submitAdd}
+          disabled={busy}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.primaryButtonText}>{busy ? "جارٍ الحفظ..." : "إضافة القيد"}</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* استعلام أرباح مقدم خدمة محدد */}
+      <ProviderEarningsLookup role={role} onRefresh={load} />
+
+      {/* قائمة المحافظ والقيود */}
+      <Text style={[styles.panelTitle, { marginTop: 4 }]}>ملخصات المحافظ</Text>
+      {summaries.length === 0 ? (
+        <Text style={styles.emptyText}>
+          لا توجد محفظ{role === "patient" ? " للمرضى" : " لمقدمي الخدمة"} بعد.
+        </Text>
+      ) : (
+        summaries.map((summary) => (
+          <WalletSummaryCard
+            key={summary.ownerId}
+            summary={summary}
+            onRemove={confirmRemove}
+          />
+        ))
+      )}
+    </View>
+  );
+}
+
+function ProviderEarningsLookup({ role, onRefresh }: { role: "patient" | "provider"; onRefresh: () => void }) {
+  if (role !== "provider") return null;
+  const [query, setQuery] = useState("");
+  const [lookup, setLookup] = useState<WalletSummary | null>(null);
+  const [providers, setProviders] = useState<ProviderAccount[]>([]);
+  const [lookupError, setLookupError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void readAdminProviderAccounts().then(setProviders);
+  }, []);
+
+  const performLookup = async (ownerId: string) => {
+    const normalized = ownerId.replace(/\s+/g, "");
+    setQuery(normalized);
+    setLookupError(null);
+    const summary = await getWalletSummary(normalized);
+    if (!summary) {
+      setLookupError("لا توجد قيود محاسبية مسجلة لمقدم الخدمة بهذا المعرّف حتى الآن.");
+      setLookup(null);
+      return;
+    }
+    setLookup(summary);
+  };
+
+  return (
+    <View style={styles.formCard}>
+      <Text style={styles.formSectionTitle}>استعلام أرباح مقدم خدمة</Text>
+      <Text style={styles.panelHint}>
+        ابحث عن مقدم خدمة بالاسم أدناه لعرض ملخص محفظته المحاسبية (المستحق له والمستحق عليه والرصيد).
+      </Text>
+      <View style={styles.providerChipsRow}>
+        {providers.map((provider) => {
+          const active = query === provider.id;
+          return (
+            <TouchableOpacity
+              key={provider.id}
+              style={[styles.kindChip, active && styles.kindChipActive]}
+              onPress={() => void performLookup(provider.id)}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.kindChipText, active && styles.kindChipActiveText, { fontSize: 11 }]}>
+                {provider.role} — {provider.fullName}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+      {providers.length === 0 ? (
+        <Text style={styles.emptyAccessText}>لا يوجد مقدمو خدمة مسجلون بعد.</Text>
+      ) : null}
+      {lookup ? (
+        <WalletSummaryCard summary={lookup} onRemove={() => void onRefresh()} />
+      ) : (
+        <Text style={lookupError ? styles.formError : styles.emptyAccessText}>
+          {lookupError || "اختر مقدم خدمة لعرض أرباحه."}
+        </Text>
+      )}
+    </View>
+  );
+}
+
+function WalletSummaryCard({ summary, onRemove }: { summary: WalletSummary; onRemove: (entry: WalletLedgerEntry) => void }) {
+  return (
+    <View style={styles.card}>
+      <View style={styles.cardHeader}>
+        <View style={styles.cardIdentity}>
+          <Text style={styles.cardName}>{summary.ownerName}</Text>
+          <Text style={styles.cardSubtitle}>{summary.ownerId}</Text>
+        </View>
+        <View style={styles.balanceBox}>
+          <Text style={[styles.badgeText, { color: "#6A6256", fontSize: 11 }]}>الرصيد</Text>
+          <Text
+            style={[
+              styles.balanceValue,
+              {
+                color:
+                  summary.balance > 0 ? "#4E7A3F" : summary.balance < 0 ? "#B55448" : "#6A6256",
+              },
+            ]}
+          >
+            {summary.balance.toFixed(2)}
+          </Text>
+        </View>
+      </View>
+      <View style={styles.walletStatsRow}>
+        <Text style={[styles.walletStat, { color: "#4E7A3F" }]}>وارد: {summary.credit.toFixed(2)}</Text>
+        <Text style={[styles.walletStat, { color: "#B55448" }]}>صادر: {summary.debit.toFixed(2)}</Text>
+        <Text style={styles.walletStat}>{summary.entries.length} قيود</Text>
+      </View>
+      {summary.entries.length === 0 ? (
+        <Text style={styles.emptyAccessText}>لا توجد قيود محاسبية لهذه المحفظة.</Text>
+      ) : (
+        <View style={styles.entriesList}>
+          {summary.entries.map((entry) => (
+            <View key={entry.id} style={styles.entryRow}>
+              <View style={styles.entryKindDot} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.entryText}>{entry.description || entry.type}</Text>
+                <Text style={styles.entryMeta}>
+                  {kindArabicLabel(entry.type)} · {new Date(entry.createdAt).toLocaleDateString("ar-LY")}
+                  {entry.reference ? ` · مرجع: ${entry.reference}` : ""}
+                </Text>
+              </View>
+              <Text
+                style={[
+                  styles.entryAmount,
+                  {
+                    color: entry.kind === "credit" ? "#4E7A3F" : "#B55448",
+                  },
+                ]}
+              >
+                {entry.kind === "credit" ? "+" : "-"}{entry.amount.toFixed(2)}
+              </Text>
+              <TouchableOpacity
+                style={styles.entryDelete}
+                onPress={() => onRemove(entry)}
+                activeOpacity={0.7}
+              >
+                <MaterialIcons name="delete-outline" size={15} color="#B55448" />
+              </TouchableOpacity>
+            </View>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+function kindArabicLabel(type: string): string {
+  switch (type) {
+    case "recharge":
+      return "شحن رصيد";
+    case "payment":
+      return "دفع خدمة";
+    case "refund":
+      return "استرداد";
+    case "earned":
+      return "مستحق له";
+    case "charge":
+      return "مستحق عليه";
+    default:
+      return type;
+  }
+}
+
 function createEmptyPatients() {
   return [] as { id: string; fullName: string }[];
 }
@@ -938,4 +1304,56 @@ const styles = StyleSheet.create({
   },
   accessText: { color: "#5A624B", flex: 1, fontSize: 11, textAlign: "right" },
   accessRevoke: { alignItems: "center", justifyContent: "center", padding: 4 },
+  roleSwitch: {
+    alignItems: "center",
+    backgroundColor: "#F0EBDD",
+    borderColor: "#E4DCCB",
+    borderRadius: 12,
+    borderWidth: 1,
+    flex: 1,
+    justifyContent: "center",
+    paddingVertical: 9,
+  },
+  roleSwitchActive: { backgroundColor: OLIVE, borderColor: OLIVE },
+  roleSwitchText: { color: "#6A6256", fontSize: 12, fontWeight: "800" },
+  roleSwitchActiveText: { color: "#FFFFFF" },
+  kindRow: { alignItems: "center", flexDirection: "row-reverse", gap: 6 },
+  kindChip: {
+    backgroundColor: "#FFFFFF",
+    borderColor: "#E4DCCB",
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  kindChipActive: { backgroundColor: GOLD, borderColor: GOLD },
+  kindChipText: { color: "#6A6256", fontSize: 11, fontWeight: "800" },
+  kindChipActiveText: { color: "#FFFFFF" },
+  amountRow: { alignItems: "center", flexDirection: "row-reverse", gap: 7 },
+  amountInput: { width: 80 },
+  formError: { color: "#B55448", fontSize: 11 },
+  balanceBox: { alignItems: "center", gap: 1, justifyContent: "center" },
+  balanceValue: { fontSize: 17, fontWeight: "800", lineHeight: 22 },
+  walletStatsRow: { alignItems: "center", flexDirection: "row-reverse", gap: 12, marginTop: 8 },
+  walletStat: { color: "#8A8173", fontSize: 10, fontWeight: "700" },
+  entriesList: { gap: 5, marginTop: 8 },
+  entryRow: {
+    alignItems: "center",
+    backgroundColor: "#FBF7EC",
+    borderRadius: 10,
+    flexDirection: "row-reverse",
+    gap: 7,
+    padding: 9,
+  },
+  entryKindDot: {
+    borderRadius: 4,
+    height: 8,
+    width: 8,
+    backgroundColor: "#6B7B3F",
+  },
+  entryText: { color: "#465132", fontSize: 11, fontWeight: "700", textAlign: "right" },
+  entryMeta: { color: "#9A907E", fontSize: 10, marginTop: 1, textAlign: "right" },
+  entryAmount: { fontSize: 12, fontWeight: "800", textAlign: "right" },
+  entryDelete: { alignItems: "center", justifyContent: "center", padding: 3 },
+  providerChipsRow: { flexDirection: "row-reverse", flexWrap: "wrap", gap: 6, marginTop: 8 },
 });

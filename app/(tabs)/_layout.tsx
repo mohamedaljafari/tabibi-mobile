@@ -43,6 +43,13 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="wallet"
+        options={{
+          title: "المحفظة",
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="wallet.pass.fill" color={color} />,
+        }}
+      />
+      <Tabs.Screen
         name="profile"
         options={{
           title: "حسابي",

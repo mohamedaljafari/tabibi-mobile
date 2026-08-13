@@ -20,7 +20,8 @@ const MAPPING = {
   "chevron.right": "chevron-right",
   "person.fill": "person",
   "bell.badge.fill": "notifications",
-} as IconMapping;
+  "wallet.pass.fill": "account-balance-wallet",
+} as unknown as IconMapping;
 
 /**
  * An icon component that uses native SF Symbols on iOS, and Material Icons on Android and web.
