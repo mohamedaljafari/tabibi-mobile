@@ -7,7 +7,7 @@ import { getPatientProfile } from "@/lib/patient-profile";
 export default function EntryScreen() {
   useEffect(() => {
     getPatientProfile().then((profile) => {
-      router.replace((profile ? "/home" : "/register") as never);
+      router.replace((profile ? (profile.isSetupComplete ? "/home" : "/profile") : "/register") as never);
     });
   }, []);
 

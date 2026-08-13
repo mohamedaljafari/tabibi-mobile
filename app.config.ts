@@ -93,6 +93,12 @@ const config: ExpoConfig = {
       },
     ],
     [
+      "expo-location",
+      {
+        locationWhenInUsePermission: "يسمح تطبيق طبيبي باستخدام موقعك لتحديد عنوان الزيارة الصحية.",
+      },
+    ],
+    [
       "expo-video",
       {
         supportsBackgroundPlayback: true,

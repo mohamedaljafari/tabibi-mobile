@@ -26,8 +26,8 @@ export default function RegisterScreen() {
 
     setIsSubmitting(true);
     try {
-      const profile = await savePatientProfile(form);
-      router.replace({ pathname: "/registration-success" as never, params: { name: profile.fullName } });
+      await savePatientProfile(form);
+      router.replace("/profile");
     } finally {
       setIsSubmitting(false);
     }

@@ -2,10 +2,32 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export const PATIENT_PROFILE_KEY = "tabibi.patient-profile.v1";
 
+export type AddressSource = "map" | "current-location";
+
+export type PatientAddress = {
+  id: string;
+  label: string;
+  addressLabel: string;
+  latitude: number;
+  longitude: number;
+  source: AddressSource;
+  createdAt: string;
+};
+
+export type MedicalRecord = {
+  id: string;
+  ownerName: string;
+  ownerType: "patient" | "family";
+  createdAt: string;
+};
+
 export type PatientProfile = {
   fullName: string;
   phone: string;
   createdAt: string;
+  addresses: PatientAddress[];
+  medicalRecords: MedicalRecord[];
+  isSetupComplete: boolean;
 };
 
 export type RegistrationInput = {
@@ -55,6 +77,9 @@ export async function savePatientProfile(input: RegistrationInput): Promise<Pati
     fullName: input.fullName.trim(),
     phone: normalizePhone(input.phone),
     createdAt: new Date().toISOString(),
+    addresses: [],
+    medicalRecords: [],
+    isSetupComplete: false,
   };
   await AsyncStorage.setItem(PATIENT_PROFILE_KEY, JSON.stringify(profile));
   return profile;
@@ -67,18 +92,74 @@ export async function getPatientProfile(): Promise<PatientProfile | null> {
   try {
     const profile = JSON.parse(rawProfile) as PatientProfile;
     if (!profile.fullName || !profile.phone) return null;
-    return profile;
+    return {
+      ...profile,
+      addresses: Array.isArray(profile.addresses) ? profile.addresses : [],
+      medicalRecords: Array.isArray(profile.medicalRecords) ? profile.medicalRecords : [],
+      isSetupComplete: Boolean(profile.isSetupComplete),
+    };
   } catch {
     return null;
   }
 }
 
 export async function updatePatientProfile(input: Pick<PatientProfile, "fullName" | "phone">) {
+  const current = await getPatientProfile();
   const profile: PatientProfile = {
     fullName: input.fullName.trim(),
     phone: normalizePhone(input.phone),
-    createdAt: (await getPatientProfile())?.createdAt ?? new Date().toISOString(),
+    createdAt: current?.createdAt ?? new Date().toISOString(),
+    addresses: current?.addresses ?? [],
+    medicalRecords: current?.medicalRecords ?? [],
+    isSetupComplete: current?.isSetupComplete ?? false,
   };
   await AsyncStorage.setItem(PATIENT_PROFILE_KEY, JSON.stringify(profile));
   return profile;
+}
+
+function createId(prefix: string) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+async function persistProfile(profile: PatientProfile) {
+  await AsyncStorage.setItem(PATIENT_PROFILE_KEY, JSON.stringify(profile));
+  return profile;
+}
+
+export async function addPatientAddress(
+  input: Omit<PatientAddress, "id" | "createdAt">,
+): Promise<PatientProfile> {
+  const current = await getPatientProfile();
+  if (!current) throw new Error("Patient profile was not found.");
+
+  const address: PatientAddress = { ...input, id: createId("address"), createdAt: new Date().toISOString() };
+  return persistProfile({ ...current, addresses: [...current.addresses, address] });
+}
+
+export async function completeAccountSetup(familyMemberNames: string[]): Promise<PatientProfile> {
+  const current = await getPatientProfile();
+  if (!current) throw new Error("Patient profile was not found.");
+
+  const currentRecords = current.medicalRecords ?? [];
+  const recordNames = new Set(currentRecords.map((record) => `${record.ownerType}:${record.ownerName.toLocaleLowerCase("ar")}`));
+  const requestedOwners: Array<Pick<MedicalRecord, "ownerName" | "ownerType">> = [
+    { ownerName: current.fullName, ownerType: "patient" },
+    ...familyMemberNames.map((ownerName) => ({ ownerName: ownerName.trim(), ownerType: "family" as const })),
+  ];
+
+  const newRecords = requestedOwners
+    .filter((owner) => owner.ownerName.length >= 3)
+    .filter((owner) => {
+      const key = `${owner.ownerType}:${owner.ownerName.toLocaleLowerCase("ar")}`;
+      if (recordNames.has(key)) return false;
+      recordNames.add(key);
+      return true;
+    })
+    .map((owner) => ({ ...owner, id: createId("medical-record"), createdAt: new Date().toISOString() }));
+
+  return persistProfile({
+    ...current,
+    medicalRecords: [...currentRecords, ...newRecords],
+    isSetupComplete: true,
+  });
 }
