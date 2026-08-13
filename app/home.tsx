@@ -73,6 +73,13 @@ export default function HomeScreen() {
   const showServiceNotice = (serviceName: string) => {
     Alert.alert(serviceName, "سيُتاح اختيار تفاصيل هذه الخدمة ضمن مسار الطلب عند استكمال المراحل التالية من التطبيق.");
   };
+  const openService = (serviceName: string) => {
+    if (serviceName === "طبيب") {
+      router.push("/doctor-specialties" as never);
+      return;
+    }
+    showServiceNotice(serviceName);
+  };
   const handleSlideEnd = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const index = Math.round(event.nativeEvent.contentOffset.x / bannerWidth);
     const safeIndex = Math.min(Math.max(index, 0), AD_SLIDES.length - 1);
@@ -136,7 +143,7 @@ export default function HomeScreen() {
 
         <View style={styles.serviceGrid}>
           {SERVICES.map((service) => (
-            <Pressable key={service.title} accessibilityRole="button" accessibilityLabel={`خدمة ${service.title}`} onPress={() => showServiceNotice(service.title)} style={({ pressed }) => [styles.serviceCard, pressed && styles.servicePressed]}>
+            <Pressable key={service.title} accessibilityRole="button" accessibilityLabel={`خدمة ${service.title}`} onPress={() => openService(service.title)} style={({ pressed }) => [styles.serviceCard, pressed && styles.servicePressed]}>
               <View style={[styles.serviceIcon, { backgroundColor: service.surface }]}><MaterialIcons name={service.icon} size={23} color={service.tint} /></View>
               <Text numberOfLines={2} style={styles.serviceTitle}>{service.title}</Text>
             </Pressable>
