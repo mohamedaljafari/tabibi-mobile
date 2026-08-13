@@ -11,7 +11,7 @@
  * تدعم أيضًا بطاقات الأطباء النموذجية (demoDoctorId) لعرض تهيئة موحدة.
  */
 import { useEffect, useMemo, useState } from "react";
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import * as Haptics from "expo-haptics";
@@ -26,18 +26,25 @@ import {
   readProviderAccounts,
   type ProviderAccount,
 } from "@/lib/provider-registry";
+import { createServiceRequest } from "@/lib/service-requests";
+import { getPatientProfile } from "@/lib/patient-profile";
 
 export default function DoctorDetailScreen() {
-  const { specialtyId, providerId, demoDoctorId } = useLocalSearchParams<{
+  const { specialtyId, providerId, demoDoctorId, addressDetails: addressDetailsParam } = useLocalSearchParams<{
     specialtyId?: string;
     providerId?: string;
     demoDoctorId?: string;
+    addressDetails?: string;
   }>();
   const specialty = getDoctorSpecialty(specialtyId);
 
   const [accounts, setAccounts] = useState<ProviderAccount[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [selectedServices, setSelectedServices] = useState<Set<string>>(new Set());
+  const [submitting, setSubmitting] = useState(false);
+  const [addressDetails, setAddressDetails] = useState<string | undefined>(
+    addressDetailsParam ? addressDetailsParam : undefined,
+  );
 
   useEffect(() => {
     readProviderAccounts().then((allAccounts) => {
@@ -78,19 +85,98 @@ export default function DoctorDetailScreen() {
       .reduce((total, service) => total + service.price, 0);
   }, [provider, selectedServices]);
 
-  const submitRequest = () => {
-    if (!provider || selectedServices.size === 0) return;
-    router.push({
-      pathname: "/care-request",
-      params: {
+  const selectedServicesList = useMemo(() => {
+    if (!provider) return [];
+    return provider.services.filter((service) => selectedServices.has(service.id));
+  }, [provider, selectedServices]);
+
+  const promptAddressAndSubmit = () => {
+    if (!provider || selectedServices.size === 0 || submitting) return;
+    const addressChoices = addressesForProvider();
+    const choiceButtons = addressChoices.map((address) => ({
+      text: address.addressLabel,
+      onPress: () => submitRequest(address.addressLabel),
+    }));
+    if (choiceButtons.length === 0) {
+      Alert.alert(
+        "اختر عنوان الزيارة",
+        "لم تسجل أي عنوان بعد. أدخل عنوان الزيارة في خانة النص للمتابعة.",
+        [
+          { text: "إدخال عنوان نصي", style: "default", onPress: () => promptAddressAndSubmitFallback() },
+          { text: "إلغاء", style: "cancel" },
+        ],
+      );
+      return;
+    }
+    Alert.alert("اختر عنوان الزيارة", "يمكنك إدخال عنوان نصي إذا كان العناوين المحفوظة لا تناسبك.", [
+      { text: "إدخال عنوان نصي", style: "default", onPress: () => promptAddressAndSubmitFallback() },
+      ...choiceButtons,
+      { text: "إلغاء", style: "cancel" },
+    ]);
+  };
+
+  const addressesForProvider = () => {
+    return providerAddresses.map((address) => address);
+  };
+
+  const [providerAddresses, setProviderAddresses] = useState<
+    Array<{ id: string; addressLabel: string; latitude?: number; longitude?: number }>
+  >([]);
+
+  useEffect(() => {
+    if (!loaded) return;
+    getPatientProfile().then((profile) => {
+      if (profile?.addresses) {
+        setProviderAddresses(profile.addresses.map((address) => ({ ...address })));
+      }
+    });
+  }, [loaded]);
+
+  const promptAddressAndSubmitFallback = () => {
+    if (!provider) return;
+    router.push({ pathname: "/request-address", params: { providerId: provider.id } } as never);
+  };
+
+  const submitRequest = async (addressLabel: string, addressDetails?: string) => {
+    if (!provider || selectedServices.size === 0 || submitting) return;
+    const profile = await getPatientProfile();
+    if (!profile) {
+      Alert.alert("البيانات غير مكتملة", "أكمل بيانات حسابك من صفحة حسابي ثم أعد المحاولة.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const request = await createServiceRequest({
+        patientId: `${profile.fullName}-${profile.phone}`,
+        patientName: profile.fullName,
+        patientPhone: profile.phone,
+        addressLabel,
+        addressDetails,
         providerId: provider.id,
-        serviceName: provider.services
-          .filter((service) => selectedServices.has(service.id))
-          .map((service) => service.name)
-          .join("،"),
-        total: String(totalSelectedPrice),
-      },
-    } as never);
+        providerName: provider.fullName,
+        specialtyLabel: specialty.title,
+        services: selectedServicesList.map((service) => ({
+          serviceId: service.id,
+          serviceName: service.name,
+          price: service.price,
+          durationMinutes: service.durationMinutes,
+        })),
+        total: totalSelectedPrice,
+      });
+      if (Platform.OS !== "web") {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+      void request;
+      Alert.alert(
+        "أُرسل الطلب",
+        `أُرسل طلبك إلى ${provider.fullName}، وستظهر حالته في صفحة الطلبات. يُبلَّغك بقبول الطلب أو رفضه من مقدم الخدمة.`,
+        [{ text: "حسنًا", onPress: () => router.replace({ pathname: "/requests" } as never) }],
+      );
+    } catch {
+      Alert.alert("تعذر إرسال الطلب", "حدثت مشكلة أثناء الحفظ، حاول مرة أخرى.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -213,8 +299,10 @@ export default function DoctorDetailScreen() {
               <Text style={styles.totalLabel}>إجمالي الخدمات المختارة</Text>
               <Text style={styles.totalValue}>{totalSelectedPrice} ر.س</Text>
             </View>
-            <Pressable accessibilityRole="button" accessibilityLabel="إرسال الطلب للخدمات المختارة" onPress={submitRequest} style={({ pressed }) => [styles.submitButton, pressed && styles.submitPressed]}>
-              <Text style={styles.submitButtonText}>إرسال الطلب ({selectedServices.size})</Text>
+            <Pressable accessibilityRole="button" accessibilityLabel="إرسال الطلب للخدمات المختارة" onPress={promptAddressAndSubmit} disabled={submitting} style={({ pressed }) => [styles.submitButton, submitting && styles.submitDisabled, pressed && styles.submitPressed]}>
+              {submitting ? <Text style={styles.submitDisabledText}>جارٍ الإرسال...</Text> : (
+            <Text style={styles.submitButtonText}>إرسال الطلب ({selectedServices.size})</Text>
+              )}
             </Pressable>
           </View>
         ) : null}
@@ -272,6 +360,8 @@ const styles = StyleSheet.create({
   totalLabel: { color: "#8A8173", fontSize: 10, textAlign: "right" },
   totalValue: { color: "#465132", fontSize: 15, fontWeight: "800", marginTop: 1, textAlign: "right" },
   submitButton: { alignItems: "center", backgroundColor: "#6B7B3F", borderRadius: 14, minHeight: 44, paddingHorizontal: 18, paddingVertical: 11, shadowColor: "#465132", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 6 },
+  submitDisabled: { opacity: 0.55 },
+  submitDisabledText: { color: "#FFFFFF", fontSize: 13, fontWeight: "800" },
   submitButtonText: { color: "#FFFFFF", fontSize: 13, fontWeight: "800" },
   submitPressed: { opacity: 0.9, transform: [{ scale: 0.97 }] },
   pressed: { opacity: 0.78, transform: [{ scale: 0.98 }] },

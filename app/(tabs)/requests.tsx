@@ -1,0 +1,188 @@
+/**
+ * تبويب «طلباتي» في تطبيق المريض.
+ *
+ * يعرض سجل طلبات الخدمة التي أرسلها المريض إلى مقدمي الخدمة:
+ * حالة كل طلب (قيد الانتظار، مقبول، مرفوض، مكتمل)، الخدمات المطلوبة
+ * مع أسعارها، مقدم الخدمة، العنوان، ورده عند قبول أو رفض الطلب.
+ *
+ * الحالة تتحدث من تطبيق طبيب شريك عند قبول مقدم الخدمة أو رفضه،
+ * وتُقرأ هنا من مفتاح التخزين المشترك service_requests_v1.
+ */
+import { useCallback, useMemo, useState } from "react";
+import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import MaterialIcons from "@expo/vector-icons/MaterialIcons";
+import { useFocusEffect } from "expo-router";
+
+import { ScreenContainer } from "@/components/screen-container";
+import { getPatientProfile } from "@/lib/patient-profile";
+import { readPatientRequests, type ServiceRequest } from "@/lib/service-requests";
+
+const STATUS_STYLES: Record<ServiceRequest["status"], { label: string; background: string; text: string }> = {
+  pending: { label: "قيد الانتظار", background: "#F0EBDD", text: "#8A8173" },
+  accepted: { label: "مقبول", background: "#EAF3E4", text: "#5A6A2E" },
+  rejected: { label: "مرفوض", background: "#F6E8E6", text: "#B55448" },
+  completed: { label: "مكتمل", background: "#E4ECF3", text: "#3F5F7E" },
+  cancelled: { label: "ملغي", background: "#F0EBDD", text: "#8A8173" },
+};
+
+function formatRequestDate(timestamp: number) {
+  const date = new Date(timestamp);
+  const hours = date.getHours().toString().padStart(2, "0");
+  const minutes = date.getMinutes().toString().padStart(2, "0");
+  const day = date.getDate().toString().padStart(2, "0");
+  const month = (date.getMonth() + 1).toString().padStart(2, "0");
+  return `${hours}:${minutes} — ${day}/${month}`;
+}
+
+export default function RequestsScreen() {
+  const [requests, setRequests] = useState<ServiceRequest[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  const loadRequests = useCallback(async () => {
+    const profile = await getPatientProfile();
+    if (!profile || !profile.fullName) {
+      setLoaded(true);
+      setLoading(false);
+      return;
+    }
+    const stored = await readPatientRequests(`${profile.fullName}-${profile.phone}`);
+    setRequests(stored.sort((first, second) => second.createdAt - first.createdAt));
+    setLoaded(true);
+    setLoading(false);
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadRequests();
+    }, [loadRequests]),
+  );
+
+  const pendingCount = useMemo(() => requests.filter((request) => request.status === "pending").length, [requests]);
+
+  const renderRequest = ({ item }: { item: ServiceRequest }) => {
+    const statusStyle = STATUS_STYLES[item.status] ?? STATUS_STYLES.pending;
+    return (
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <View style={styles.providerCopy}>
+            <Text style={styles.providerName}>{item.providerName}</Text>
+            <Text style={styles.specialtyText}>{item.specialtyLabel}</Text>
+          </View>
+          <View style={[styles.statusBadge, { backgroundColor: statusStyle.background }]}>
+            <Text style={[styles.statusText, { color: statusStyle.text }]}>{statusStyle.label}</Text>
+          </View>
+        </View>
+
+        <Text style={styles.timeText}>{formatRequestDate(item.createdAt)}</Text>
+
+        <View style={styles.servicesList}>
+          {item.services.map((service) => (
+            <View key={service.serviceId} style={styles.serviceRow}>
+              <Text style={styles.serviceName}>{service.serviceName}</Text>
+              <Text style={styles.servicePrice}>{service.price} ر.س</Text>
+            </View>
+          ))}
+        </View>
+
+        <View style={styles.locationRow}>
+          <MaterialIcons name="place" size={14} color="#6B7B3F" />
+          <Text style={styles.locationText}>
+            {item.addressLabel}{item.addressDetails ? ` — ${item.addressDetails}` : ""}
+          </Text>
+        </View>
+
+        {item.providerReply ? (
+          <View style={styles.replyBlock}>
+            <MaterialIcons name="chat" size={13} color="#6B7B3F" />
+            <Text style={styles.replyText}>{item.providerReply}</Text>
+          </View>
+        ) : null}
+
+        <View style={styles.totalRow}>
+          <Text style={styles.totalLabel}>الإجمالي</Text>
+          <Text style={styles.totalValue}>{item.total} ر.س</Text>
+        </View>
+
+        {item.status === "pending" ? (
+          <Text style={styles.pendingHint}>ينتظر رد مقدم الخدمة، ستظهر حالته هنا فور رده.</Text>
+        ) : null}
+      </View>
+    );
+  };
+
+  if (loading) {
+    return (
+      <ScreenContainer edges={["top", "bottom", "left", "right"]}>
+        <View style={styles.loading}><ActivityIndicator color="#6B7B3F" size="large" /></View>
+      </ScreenContainer>
+    );
+  }
+
+  return (
+    <ScreenContainer edges={["top", "bottom", "left", "right"]}>
+      <View style={styles.header}>
+        <Text style={styles.title}>طلباتي</Text>
+        <Text style={styles.subtitle}>
+          {pendingCount > 0
+            ? `${pendingCount} طلب في انتظار رد مقدم الخدمة`
+            : loaded && requests.length === 0
+              ? "لم ترسل أي طلب بعد"
+              : "سجل طلباتك وحالاتها"}
+        </Text>
+      </View>
+
+      {!loaded ? (
+        <View style={styles.emptySection}>
+          <MaterialIcons name="inbox" size={32} color="#B9AFA0" />
+          <Text style={styles.emptyText}>حمّل الملف الطبي من صفحة حسابي لتتبع طلباتك هنا.</Text>
+        </View>
+      ) : requests.length === 0 ? (
+        <View style={styles.emptySection}>
+          <MaterialIcons name="inbox" size={32} color="#B9AFA0" />
+          <Text style={styles.emptyText}>
+            اطلب خدمة من أحد مقدمي الخدمة وسيظهر طلبك هنا مع حالته: قيد الانتظار حتى رد مقدم الخدمة، ثم مقبول أو مرفوض.
+          </Text>
+        </View>
+      ) : (
+        <FlatList
+          data={requests}
+          keyExtractor={(item) => item.id}
+          renderItem={renderRequest}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
+    </ScreenContainer>
+  );
+}
+
+const styles = StyleSheet.create({
+  loading: { flex: 1, alignItems: "center", justifyContent: "center" },
+  header: { paddingHorizontal: 20, paddingTop: 14, paddingBottom: 10 },
+  title: { color: "#465132", fontSize: 21, fontWeight: "800", textAlign: "right" },
+  subtitle: { color: "#8A8173", fontSize: 11, marginTop: 3, textAlign: "right" },
+  listContent: { padding: 20, paddingTop: 8, gap: 12 },
+  card: { backgroundColor: "#FFFDF8", borderColor: "#E8E0D1", borderRadius: 18, borderWidth: 1, gap: 8, padding: 15 },
+  cardHeader: { alignItems: "center", flexDirection: "row-reverse", gap: 8 },
+  providerCopy: { flex: 1 },
+  providerName: { color: "#465132", fontSize: 15, fontWeight: "800", textAlign: "right" },
+  specialtyText: { color: "#6B7B3F", fontSize: 11, marginTop: 2, textAlign: "right" },
+  statusBadge: { borderRadius: 9, paddingHorizontal: 8, paddingVertical: 3 },
+  statusText: { fontSize: 10, fontWeight: "800" },
+  timeText: { color: "#9A907E", fontSize: 10, textAlign: "right" },
+  servicesList: { gap: 6, marginTop: 2 },
+  serviceRow: { alignItems: "center", backgroundColor: "#F8F5ED", borderRadius: 11, flexDirection: "row-reverse", gap: 8, justifyContent: "space-between", paddingHorizontal: 10, paddingVertical: 7 },
+  serviceName: { color: "#5A624B", fontSize: 12, fontWeight: "700", textAlign: "right" },
+  servicePrice: { color: "#5A624B", fontSize: 12, fontWeight: "800" },
+  locationRow: { alignItems: "center", flexDirection: "row-reverse", gap: 6 },
+  locationText: { color: "#786F61", fontSize: 11, flex: 1, textAlign: "right" },
+  replyBlock: { alignItems: "flex-start", backgroundColor: "#F0EBDD", borderRadius: 11, flexDirection: "row-reverse", gap: 7, padding: 10 },
+  replyText: { color: "#6B5F4A", fontSize: 12, flex: 1, lineHeight: 17, textAlign: "right" },
+  totalRow: { alignItems: "center", borderTopColor: "#EFE9DC", borderTopWidth: 1, flexDirection: "row-reverse", gap: 10, paddingTop: 8 },
+  totalLabel: { color: "#8A8173", fontSize: 11, flex: 1, textAlign: "right" },
+  totalValue: { color: "#465132", fontSize: 14, fontWeight: "800" },
+  pendingHint: { color: "#8A8173", fontSize: 10, lineHeight: 15, textAlign: "right" },
+  emptySection: { alignItems: "center", backgroundColor: "#F0EBDD", borderRadius: 16, gap: 10, margin: 20, padding: 28 },
+  emptyText: { color: "#786F61", fontSize: 12, lineHeight: 18, textAlign: "center", paddingHorizontal: 12 },
+});
