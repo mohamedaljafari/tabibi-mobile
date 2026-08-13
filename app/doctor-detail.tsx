@@ -26,7 +26,7 @@ import {
   readProviderAccounts,
   type ProviderAccount,
 } from "@/lib/provider-registry";
-import { createServiceRequest } from "@/lib/service-requests";
+import { createServiceRequest, type PaymentMethod } from "@/lib/service-requests";
 import { createNotification } from "@/lib/notifications";
 import { getPatientProfile } from "@/lib/patient-profile";
 import { getProviderRatingSummary, getProviderRatings, type ProviderRating } from "@/lib/ratings";
@@ -111,8 +111,23 @@ export default function DoctorDetailScreen() {
     return provider.services.filter((service) => selectedServices.has(service.id));
   }, [provider, selectedServices]);
 
+  const [chosenPaymentMethod, setChosenPaymentMethod] = useState<PaymentMethod | null>(null);
+
   const promptAddressAndSubmit = () => {
     if (!provider || selectedServices.size === 0 || submitting) return;
+    Alert.alert(
+      "اختر طريقة الدفع",
+      `المبلغ الإجمالي: ${totalSelectedPrice.toLocaleString("ar-EG")} دينار. الدفع النقدي يتم بعد انتهاء الخدمة، والدفع الإلكتروني يتم بعد قبول مقدم الخدمة للطلب.`,
+      [
+        { text: "دفع نقدي", style: "default", onPress: () => { setChosenPaymentMethod("cash"); promptAddressAfterPayment(); } },
+        { text: "دفع إلكتروني", style: "default", onPress: () => { setChosenPaymentMethod("electronic"); promptAddressAfterPayment(); } },
+        { text: "إلغاء", style: "cancel" },
+      ],
+    );
+  };
+
+  const promptAddressAfterPayment = () => {
+    if (!provider) return;
     const addressChoices = addressesForProvider();
     const choiceButtons = addressChoices.map((address) => ({
       text: address.addressLabel,
@@ -183,6 +198,7 @@ export default function DoctorDetailScreen() {
           durationMinutes: service.durationMinutes,
         })),
         total: totalSelectedPrice,
+        paymentMethod: chosenPaymentMethod ?? undefined,
       });
       await createNotification({
         recipientId: provider.id,
@@ -197,11 +213,10 @@ export default function DoctorDetailScreen() {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
       void request;
-      Alert.alert(
-        "أُرسل الطلب",
-        `أُرسل طلبك إلى ${provider.fullName}، وستظهر حالته في صفحة الطلبات. يُبلَّغك بقبول الطلب أو رفضه من مقدم الخدمة.`,
-        [{ text: "حسنًا", onPress: () => router.replace({ pathname: "/requests" } as never) }],
-      );
+      router.replace({
+        pathname: "/payment",
+        params: { requestId: request.id, providerId: provider.id, paymentMethod: chosenPaymentMethod ?? "cash", total: String(totalSelectedPrice) },
+      } as never);
     } catch {
       Alert.alert("تعذر إرسال الطلب", "حدثت مشكلة أثناء الحفظ، حاول مرة أخرى.");
     } finally {
