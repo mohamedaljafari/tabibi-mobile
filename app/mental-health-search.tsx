@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View , Alert } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 
+import { ProviderResultCard } from "@/components/provider-result-card";
 import { ScreenContainer } from "@/components/screen-container";
 import { getMentalHealthProvidersForSpecialty, getMentalHealthSpecialty, MENTAL_HEALTH_SORT_LABELS, type MentalHealthSort } from "@/lib/mental-health-directory";
 import { getPatientProfile, type PatientAddress, type PatientProfile } from "@/lib/patient-profile";
+import { mergeMentalHealthProviders, readProviderAccounts, type ProviderAccount } from "@/lib/provider-registry";
 
 const SORT_OPTIONS: MentalHealthSort[] = ["nearest", "rating", "price-high", "price-low"];
 
@@ -17,6 +19,8 @@ export default function MentalHealthSearchScreen() {
   const [addressMenuOpen, setAddressMenuOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
   const [sort, setSort] = useState<MentalHealthSort>("nearest");
+  const [accounts, setAccounts] = useState<ProviderAccount[]>([]);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     getPatientProfile().then((savedProfile) => {
@@ -25,7 +29,24 @@ export default function MentalHealthSearchScreen() {
     });
   }, []);
 
+  useEffect(() => {
+    readProviderAccounts().then((allAccounts) => {
+      setAccounts(allAccounts);
+      setLoaded(true);
+    });
+  }, []);
+
   const providers = useMemo(() => getMentalHealthProvidersForSpecialty(specialty.id, sort), [specialty.id, sort]);
+  const providerResults = useMemo(() => {
+    if (!loaded) return [];
+    return mergeMentalHealthProviders(accounts);
+  }, [loaded, accounts, specialty.title]);
+  const sortedProviders = useMemo(() => {
+    const results = [...providerResults];
+    if (sort === "price-low") return results.sort((a, b) => a.services[0]?.price - b.services[0]?.price);
+    if (sort === "price-high") return results.sort((a, b) => (b.services[0]?.price ?? 0) - (a.services[0]?.price ?? 0));
+    return results;
+  }, [providerResults, sort]);
   const chooseAddress = (address: PatientAddress) => { setSelectedAddress(address); setAddressMenuOpen(false); };
   const chooseSort = (option: MentalHealthSort) => { setSort(option); setFilterOpen(false); };
 
@@ -54,7 +75,11 @@ export default function MentalHealthSearchScreen() {
             <View style={styles.emptyAddress}><MaterialIcons name="location-off" size={22} color="#8A8173" /><Text style={styles.emptyAddressText}>أضف عنوانًا محفوظًا أولًا للبحث عن المختصين الأقرب إليك.</Text><Pressable accessibilityRole="button" onPress={() => router.push("/profile" as never)} style={({ pressed }) => [styles.addAddressButton, pressed && styles.pressed]}><Text style={styles.addAddressText}>الذهاب إلى حسابي</Text></Pressable></View>
           )}
 
-          <View style={styles.resultsHeading}><View><Text style={styles.resultsTitle}>المختصون الأقرب</Text><Text style={styles.resultsCaption}>بيانات نموذجية لواجهة البحث</Text></View><Text style={styles.sortText}>{MENTAL_HEALTH_SORT_LABELS[sort]}</Text></View>
+          <View style={styles.resultsHeading}><View><Text style={styles.resultsTitle}>المختصون الأقرب</Text><Text style={styles.resultsCaption}>يظهر أولًا مقدمو الخدمة المسجلون في التطبيق</Text></View><Text style={styles.sortText}>{MENTAL_HEALTH_SORT_LABELS[sort]}</Text></View>
+          {sortedProviders.map((provider) => (
+            <ProviderResultCard key={provider.id} provider={provider} serviceLabel={specialty.title} specialtyId={specialty.id} tint="#F2EDF4" />
+          ))}
+
           {providers.map((provider) => (
             <Pressable key={provider.id} accessibilityRole="button" onPress={() => Alert.alert(provider.name, "سيُضاف عرض الملف الشخصي للمختص والحجز في مرحلة لاحقة.")} style={({ pressed }) => [styles.providerCard, pressed && styles.pressed]}>
               <View style={styles.providerAvatar}><Text style={styles.avatarText}>{provider.initials}</Text></View>

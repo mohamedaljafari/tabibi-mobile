@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View , Alert } from "react-native";
 import { router } from "expo-router";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 
+import { ProviderResultCard } from "@/components/provider-result-card";
 import { ScreenContainer } from "@/components/screen-container";
 import { getNurses, NURSING_SORT_LABELS, type NursingSort } from "@/lib/nursing-directory";
 import { getPatientProfile, type PatientAddress, type PatientProfile } from "@/lib/patient-profile";
+import { mergeNursingProviders, readProviderAccounts, type ProviderAccount } from "@/lib/provider-registry";
 
 const SORT_OPTIONS: NursingSort[] = ["nearest", "rating", "price-high", "price-low"];
 
@@ -15,6 +17,8 @@ export default function NursingSearchScreen() {
   const [addressMenuOpen, setAddressMenuOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
   const [sort, setSort] = useState<NursingSort>("nearest");
+  const [accounts, setAccounts] = useState<ProviderAccount[]>([]);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     getPatientProfile().then((savedProfile) => {
@@ -23,7 +27,24 @@ export default function NursingSearchScreen() {
     });
   }, []);
 
+  useEffect(() => {
+    readProviderAccounts().then((allAccounts) => {
+      setAccounts(allAccounts);
+      setLoaded(true);
+    });
+  }, []);
+
   const nurses = useMemo(() => getNurses(sort), [sort]);
+  const providerResults = useMemo(() => {
+    if (!loaded) return [];
+    return mergeNursingProviders(accounts);
+  }, [loaded, accounts]);
+  const sortedProviders = useMemo(() => {
+    const results = [...providerResults];
+    if (sort === "price-low") return results.sort((a, b) => a.services[0]?.price - b.services[0]?.price);
+    if (sort === "price-high") return results.sort((a, b) => (b.services[0]?.price ?? 0) - (a.services[0]?.price ?? 0));
+    return results;
+  }, [providerResults, sort]);
   const chooseAddress = (address: PatientAddress) => {
     setSelectedAddress(address);
     setAddressMenuOpen(false);
@@ -90,10 +111,14 @@ export default function NursingSearchScreen() {
           <View style={styles.resultsHeading}>
             <View>
               <Text style={styles.resultsTitle}>مقدمو التمريض الأقرب</Text>
-              <Text style={styles.resultsCaption}>بيانات نموذجية لواجهة البحث</Text>
+              <Text style={styles.resultsCaption}>يظهر أولًا مقدمو الخدمة المسجلون في التطبيق</Text>
             </View>
             <Text style={styles.sortText}>{NURSING_SORT_LABELS[sort]}</Text>
           </View>
+
+          {sortedProviders.map((provider) => (
+            <ProviderResultCard key={provider.id} provider={provider} serviceLabel="تمريض منزلي" specialtyId="nursing" tint="#FBF2E2" />
+          ))}
 
           {nurses.map((nurse) => (
             <Pressable key={nurse.id} accessibilityRole="button" onPress={() => Alert.alert(nurse.name, "سيُضاف عرض الملف الشخصي لمقدم الخدمة والحجز في مرحلة لاحقة.")} style={({ pressed }) => [styles.nurseCard, pressed && styles.pressed]}>

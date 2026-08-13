@@ -36,7 +36,7 @@ export const DOCTOR_SPECIALTIES: DoctorSpecialty[] = [
   { id: "neurology", title: "أعصاب", icon: "psychology", tint: "#887692", surface: "#F1EDF4" },
 ];
 
-const DEMO_DOCTORS: DemoDoctor[] = [
+export const DEMO_DOCTORS: DemoDoctor[] = [
   { id: "demo-1", name: "د. سارة محمود", rating: 4.9, reviewCount: 128, price: 260, distanceKm: 1.2, initials: "سم" },
   { id: "demo-2", name: "د. أحمد رائد", rating: 4.8, reviewCount: 96, price: 210, distanceKm: 2.8, initials: "أر" },
   { id: "demo-3", name: "د. نور حسان", rating: 4.7, reviewCount: 74, price: 180, distanceKm: 4.1, initials: "نح" },
@@ -45,6 +45,15 @@ const DEMO_DOCTORS: DemoDoctor[] = [
 
 export function getDoctorSpecialty(id?: string) {
   return DOCTOR_SPECIALTIES.find((specialty) => specialty.id === id) ?? DOCTOR_SPECIALTIES[0];
+}
+
+/** مطابقة تخصص الشريك (مثل "طب عام") مع عنوان تخصص بحث الأطباء (مثل "طبيب عام") */
+export function matchProviderSpecialty(providerSpecialization: string, specialtyTitle: string): boolean {
+  const normalized = (text: string) =>
+    text.replace(/\s*(طبيب|طبيبة|أخصائي|أخصائية)\s*/g, " ").replace(/\s+/g, " ").trim();
+  const a = normalized(providerSpecialization);
+  const b = normalized(specialtyTitle);
+  return a === b || a.includes(b) || b.includes(a);
 }
 
 export function getDoctorsForSpecialty(_specialtyId: string, sort: DoctorSort) {

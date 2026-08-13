@@ -1,11 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { getDoctorsForSpecialty, getDoctorSpecialty, SORT_LABELS, type DoctorSort } from "@/lib/doctor-directory";
 import { getPatientProfile, type PatientAddress, type PatientProfile } from "@/lib/patient-profile";
+import {
+  formatProviderAvailability,
+  formatYearsOfExperience,
+  initialsFromName,
+  mergeDoctorsForSpecialty,
+  readProviderAccounts,
+  type ProviderAccount,
+} from "@/lib/provider-registry";
 
 const SORT_OPTIONS: DoctorSort[] = ["nearest", "rating", "price-high", "price-low"];
 
@@ -17,6 +25,9 @@ export default function DoctorSearchScreen() {
   const [addressMenuOpen, setAddressMenuOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
   const [sort, setSort] = useState<DoctorSort>("nearest");
+  const [providers, setProviders] = useState<ProviderAccount[]>([]);
+  const [providerResults, setProviderResults] = useState<ProviderAccount[]>([]);
+  const [loadedProviders, setLoadedProviders] = useState(false);
 
   useEffect(() => {
     getPatientProfile().then((savedProfile) => {
@@ -25,9 +36,29 @@ export default function DoctorSearchScreen() {
     });
   }, []);
 
+  useEffect(() => {
+    readProviderAccounts().then((accounts) => {
+      setProviders(accounts);
+      setLoadedProviders(true);
+    });
+  }, []);
+
   const doctors = useMemo(() => getDoctorsForSpecialty(specialty.id, sort), [specialty.id, sort]);
+  useEffect(() => {
+    if (!loadedProviders) return;
+    setProviderResults(mergeDoctorsForSpecialty(providers, specialty.title));
+  }, [loadedProviders, providers, specialty.title]);
+
   const chooseAddress = (address: PatientAddress) => { setSelectedAddress(address); setAddressMenuOpen(false); };
   const chooseSort = (option: DoctorSort) => { setSort(option); setFilterOpen(false); };
+  const sortedProviders = useMemo(() => {
+    const results = [...providerResults];
+    if (sort === "price-low") return results.sort((a, b) => a.services[0]?.price - b.services[0]?.price);
+    if (sort === "price-high") return results.sort((a, b) => (b.services[0]?.price ?? 0) - (a.services[0]?.price ?? 0));
+    if (sort === "rating") return results.sort((a, b) => a.yearsOfExperience - b.yearsOfExperience);
+    return results;
+  }, [providerResults, sort]);
+  const firstServicePrice = (provider: ProviderAccount) => provider.services[0]?.price ?? 0;
 
   return (
     <ScreenContainer edges={["top", "bottom", "left", "right"]}>
@@ -54,9 +85,35 @@ export default function DoctorSearchScreen() {
             <View style={styles.emptyAddress}><MaterialIcons name="location-off" size={22} color="#8A8173" /><Text style={styles.emptyAddressText}>أضف عنوانًا محفوظًا أولًا للبحث عن الأقرب إليك.</Text><Pressable accessibilityRole="button" onPress={() => router.push("/profile" as never)} style={({ pressed }) => [styles.addAddressButton, pressed && styles.pressed]}><Text style={styles.addAddressText}>الذهاب إلى حسابي</Text></Pressable></View>
           )}
 
-          <View style={styles.resultsHeading}><View><Text style={styles.resultsTitle}>الأطباء الأقرب</Text><Text style={styles.resultsCaption}>بيانات نموذجية لواجهة البحث</Text></View><Text style={styles.sortText}>{SORT_LABELS[sort]}</Text></View>
+          <View style={styles.resultsHeading}><View><Text style={styles.resultsTitle}>الأطباء الأقرب</Text><Text style={styles.resultsCaption}>يظهر أولًا مقدمو الخدمة المسجلون في التطبيق</Text></View><Text style={styles.sortText}>{SORT_LABELS[sort]}</Text></View>
+
+          {sortedProviders.map((provider) => (
+            <Pressable key={provider.id} accessibilityRole="button" onPress={() => router.push({ pathname: "/doctor-detail", params: { specialtyId: specialty.id, providerId: provider.id } } as never)} style={({ pressed }) => [styles.doctorCard, pressed && styles.pressed]}>
+              {provider.photoUri ? (
+                <Image source={{ uri: provider.photoUri }} style={styles.doctorPhoto} />
+              ) : (
+                <View style={styles.doctorAvatar}><Text style={styles.avatarText}>{initialsFromName(provider.fullName)}</Text></View>
+              )}
+              <View style={styles.doctorInfo}>
+                <View style={styles.nameRow}>
+                  <Text style={styles.doctorName}>{provider.fullName}</Text>
+                  <View style={styles.verifiedBadge}><MaterialIcons name="verified" size={13} color="#C9A961" /><Text style={styles.verifiedText}>موثّق</Text></View>
+                </View>
+                <Text style={styles.doctorSpecialty}>{specialty.title}</Text>
+                <View style={styles.doctorMeta}>
+                  {formatYearsOfExperience(provider.yearsOfExperience) ? <View style={styles.metaItem}><MaterialIcons name="work-outline" size={14} color="#6B7B3F" /><Text style={styles.metaText}>{formatYearsOfExperience(provider.yearsOfExperience)}</Text></View> : null}
+                  <View style={styles.metaItem}><MaterialIcons name="event-available" size={14} color="#6B7B3F" /><Text style={styles.metaText}>{formatProviderAvailability(provider.availability)}</Text></View>
+                </View>
+                {provider.bio ? <Text numberOfLines={2} style={styles.providerBio}>{provider.bio}</Text> : null}
+              </View>
+              {firstServicePrice(provider) > 0 ? (
+                <View style={styles.priceBlock}><Text style={styles.price}>{firstServicePrice(provider)}</Text><Text style={styles.currency}>ر.س</Text></View>
+              ) : null}
+            </Pressable>
+          ))}
+
           {doctors.map((doctor) => (
-            <Pressable key={doctor.id} accessibilityRole="button" onPress={() => Alert.alert(doctor.name, "سيُضاف عرض الملف الشخصي للطبيب والحجز في مرحلة لاحقة.")} style={({ pressed }) => [styles.doctorCard, pressed && styles.pressed]}>
+            <Pressable key={doctor.id} accessibilityRole="button" onPress={() => router.push({ pathname: "/doctor-detail", params: { specialtyId: specialty.id, demoDoctorId: doctor.id } } as never)} style={({ pressed }) => [styles.doctorCard, pressed && styles.pressed]}>
               <View style={styles.doctorAvatar}><Text style={styles.avatarText}>{doctor.initials}</Text></View>
               <View style={styles.doctorInfo}><Text style={styles.doctorName}>{doctor.name}</Text><Text style={styles.doctorSpecialty}>{specialty.title}</Text><View style={styles.doctorMeta}><View style={styles.metaItem}><MaterialIcons name="star" size={14} color="#C9A961" /><Text style={styles.metaText}>{doctor.rating} ({doctor.reviewCount})</Text></View><View style={styles.metaItem}><MaterialIcons name="location-on" size={14} color="#6B7B3F" /><Text style={styles.metaText}>{doctor.distanceKm} كم</Text></View></View></View>
               <View style={styles.priceBlock}><Text style={styles.price}>{doctor.price}</Text><Text style={styles.currency}>ر.س</Text></View>
@@ -100,6 +157,11 @@ const styles = StyleSheet.create({
   resultsCaption: { color: "#9A907E", fontSize: 10, marginTop: 1, textAlign: "right" },
   sortText: { color: "#6B7B3F", fontSize: 10, fontWeight: "800" },
   doctorCard: { alignItems: "center", backgroundColor: "#FFFDF8", borderColor: "#E8E0D1", borderRadius: 17, borderWidth: 1, flexDirection: "row-reverse", gap: 10, marginTop: 10, minHeight: 91, padding: 11 },
+  doctorPhoto: { borderRadius: 24, height: 48, width: 48 },
+  nameRow: { alignItems: "center", flexDirection: "row-reverse", gap: 6 },
+  verifiedBadge: { alignItems: "center", backgroundColor: "#FBF7EC", borderRadius: 8, flexDirection: "row-reverse", gap: 3, paddingHorizontal: 6, paddingVertical: 2 },
+  verifiedText: { color: "#B8943F", fontSize: 10, fontWeight: "800" },
+  providerBio: { color: "#8A8173", fontSize: 10, lineHeight: 14, marginTop: 4, textAlign: "right" },
   doctorAvatar: { alignItems: "center", backgroundColor: "#EFF2E6", borderRadius: 24, height: 48, justifyContent: "center", width: 48 },
   avatarText: { color: "#6B7B3F", fontSize: 12, fontWeight: "800" },
   doctorInfo: { flex: 1 },
