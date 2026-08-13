@@ -27,7 +27,7 @@ const SERVICES: Service[] = [
   { title: "طبيب", icon: "medical-services", tint: "#6B7B3F", surface: "#EFF2E6" },
   { title: "خدمات طبية مساعدة", icon: "medical-services", tint: "#6B7B3F", surface: "#EFF2E6" },
   { title: "صحة نفسية", icon: "psychology", tint: "#8F7D98", surface: "#F2EDF4" },
-  { title: "تغذية", icon: "restaurant", tint: "#B97E52", surface: "#FBEEE7" },
+  { title: "التغذية والصحة والجمال", icon: "restaurant", tint: "#B97E52", surface: "#FBEEE7" },
   { title: "طب بيطري", icon: "pets", tint: "#A07255", surface: "#F7EDE7" },
   { title: "المختبر", icon: "science", tint: "#627F9D", surface: "#EBF1F6" },
   { title: "الصيدليات", icon: "local-pharmacy", tint: "#A65E67", surface: "#F8ECEE" },
@@ -82,6 +82,14 @@ export default function HomeScreen() {
     }
     if (serviceName === "صحة نفسية") {
       router.push("/mental-health-specialties" as never);
+      return;
+    }
+    if (serviceName === "التغذية والصحة والجمال") {
+      router.push({ pathname: "/home-service-search", params: { serviceId: "nutrition-health-beauty" } } as never);
+      return;
+    }
+    if (serviceName === "طب بيطري") {
+      router.push({ pathname: "/home-service-search", params: { serviceId: "veterinary" } } as never);
       return;
     }
     showServiceNotice(serviceName);
