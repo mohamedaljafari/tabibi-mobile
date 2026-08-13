@@ -80,7 +80,7 @@ export default function PharmacyQuoteScreen() {
     Alert.alert(
       "تم إرسال طلب عرض السعر",
       `سيُحفظ طلبك محليًا في هذه النسخة. نطاق البحث: ${getPharmacyScopeSummary({ scope, city: "طرابلس", selectedAreas, distanceKm })}.`,
-      [{ text: "حسنًا", onPress: () => router.replace("/home" as never) }],
+      [{ text: "عرض العروض", onPress: () => router.replace({ pathname: "/quote-offers", params: { source: "pharmacy" } } as never) }],
     );
   };
 

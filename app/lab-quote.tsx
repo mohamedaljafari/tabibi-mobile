@@ -59,7 +59,7 @@ export default function LabQuoteScreen() {
       Alert.alert("أكمل بيانات الطلب", errorMessage);
       return;
     }
-    Alert.alert("تم إرسال طلب عرض السعر", `سيُحفظ طلب المختبر محليًا في هذه النسخة. نطاق البحث: ${getLabScopeSummary({ scope, city: "طرابلس", selectedAreas, distanceKm })}.`, [{ text: "حسنًا", onPress: () => router.replace("/home" as never) }]);
+    Alert.alert("تم إرسال طلب عرض السعر", `سيُحفظ طلب المختبر محليًا في هذه النسخة. نطاق البحث: ${getLabScopeSummary({ scope, city: "طرابلس", selectedAreas, distanceKm })}.`, [{ text: "عرض العروض", onPress: () => router.replace({ pathname: "/quote-offers", params: { source: "lab" } } as never) }]);
   };
 
   return (
