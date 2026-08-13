@@ -96,6 +96,8 @@ export default function RootLayout() {
             <Stack.Screen name="doctor-specialties" />
             <Stack.Screen name="doctor-search" />
             <Stack.Screen name="nursing-search" />
+            <Stack.Screen name="assisted-services" />
+            <Stack.Screen name="assisted-service-search" />
             <Stack.Screen name="mental-health-specialties" />
             <Stack.Screen name="mental-health-search" />
             <Stack.Screen name="(tabs)" />

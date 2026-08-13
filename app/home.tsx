@@ -25,11 +25,9 @@ type AdSlide = {
 
 const SERVICES: Service[] = [
   { title: "طبيب", icon: "medical-services", tint: "#6B7B3F", surface: "#EFF2E6" },
-  { title: "تمريض", icon: "healing", tint: "#B58943", surface: "#FBF2E2" },
+  { title: "خدمات طبية مساعدة", icon: "medical-services", tint: "#6B7B3F", surface: "#EFF2E6" },
   { title: "صحة نفسية", icon: "psychology", tint: "#8F7D98", surface: "#F2EDF4" },
   { title: "تغذية", icon: "restaurant", tint: "#B97E52", surface: "#FBEEE7" },
-  { title: "علاج طبيعي", icon: "accessibility-new", tint: "#628C8B", surface: "#E8F3F2" },
-  { title: "رعاية كبار السن", icon: "elderly", tint: "#7B8A62", surface: "#F0F3EA" },
   { title: "طب بيطري", icon: "pets", tint: "#A07255", surface: "#F7EDE7" },
   { title: "المختبر", icon: "science", tint: "#627F9D", surface: "#EBF1F6" },
   { title: "الصيدليات", icon: "local-pharmacy", tint: "#A65E67", surface: "#F8ECEE" },
@@ -78,8 +76,8 @@ export default function HomeScreen() {
       router.push("/doctor-specialties" as never);
       return;
     }
-    if (serviceName === "تمريض") {
-      router.push("/nursing-search" as never);
+    if (serviceName === "خدمات طبية مساعدة") {
+      router.push("/assisted-services" as never);
       return;
     }
     if (serviceName === "صحة نفسية") {
