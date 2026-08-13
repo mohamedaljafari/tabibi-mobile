@@ -92,6 +92,10 @@ export default function HomeScreen() {
       router.push({ pathname: "/home-service-search", params: { serviceId: "veterinary" } } as never);
       return;
     }
+    if (serviceName === "المختبر") {
+      router.push("/lab-quote" as never);
+      return;
+    }
     if (serviceName === "الصيدليات") {
       router.push("/pharmacy-quote" as never);
       return;

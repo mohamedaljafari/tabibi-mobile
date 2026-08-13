@@ -100,6 +100,7 @@ export default function RootLayout() {
             <Stack.Screen name="assisted-service-search" />
             <Stack.Screen name="home-service-search" />
             <Stack.Screen name="pharmacy-quote" />
+            <Stack.Screen name="lab-quote" />
             <Stack.Screen name="mental-health-specialties" />
             <Stack.Screen name="mental-health-search" />
             <Stack.Screen name="(tabs)" />
