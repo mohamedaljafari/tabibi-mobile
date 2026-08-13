@@ -17,11 +17,13 @@ export function TabibiLogo({ size = 72 }: TabibiLogoProps) {
 }
 
 export function TabibiBrand({ width = 220 }: TabibiBrandProps) {
-  return <Image source={require("../assets/images/tabibi-brand.png")} style={[styles.brand, { width }]} resizeMode="contain" accessibilityLabel="شعار طبيبي للرعاية الصحية المنزلية" />;
+  // Brand logo aspect ratio ≈ 0.78 (width/height) → height = width / 0.78.
+  // Fixed height is used instead of aspectRatio for reliable rendering on web.
+  return <Image source={require("../assets/images/tabibi-brand.png")} style={[styles.brand, { width, height: Math.round(width / 0.78) }]} resizeMode="contain" accessibilityLabel="شعار طبيبي للرعاية الصحية المنزلية" />;
 }
 
 const styles = StyleSheet.create({
   markWrap: { alignItems: "center", justifyContent: "center" },
   mark: { height: "100%", width: "100%" },
-  brand: { aspectRatio: 0.78, height: undefined },
+  brand: { height: undefined },
 });

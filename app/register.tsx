@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 
 import { FormField } from "@/components/form-field";
@@ -34,11 +34,11 @@ export default function RegisterScreen() {
   };
 
   return (
-    <ScreenContainer edges={["top", "bottom", "left", "right"]} containerClassName="bg-background">
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.flex}>
+    <ScreenContainer edges={["top", "left", "right"]} containerClassName="bg-background">
+      <View style={styles.flex}>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           <View style={styles.header}>
-            <TabibiBrand width={175} />
+            <TabibiBrand width={86} />
             <Text style={styles.title}>أهلًا بك في رعايتك المنزلية</Text>
             <Text style={styles.subtitle}>أنشئ حسابك لتبدأ طلب الخدمات الصحية وأنت في منزلك.</Text>
           </View>
@@ -56,21 +56,21 @@ export default function RegisterScreen() {
           </Pressable>
           <Text style={styles.privacy}>بالمتابعة، أنت توافق على استخدام بياناتك لتقديم خدمات الرعاية الصحية المنزلية.</Text>
         </ScrollView>
-      </KeyboardAvoidingView>
+      </View>
     </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  content: { paddingBottom: 24, paddingHorizontal: 20, paddingTop: 22 },
-  header: { alignItems: "center", marginBottom: 26 },
-  title: { color: "#465132", fontSize: 25, fontWeight: "800", lineHeight: 34, marginTop: 2, textAlign: "center" },
-  subtitle: { color: "#8A8173", fontSize: 15, lineHeight: 23, marginTop: 7, maxWidth: 310, textAlign: "center" },
-  formCard: { backgroundColor: "#FFFDF8", borderColor: "#E4DCCB", borderRadius: 24, borderWidth: 1, gap: 17, padding: 18, shadowColor: "#6B7B3F", shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.07, shadowRadius: 18 },
-  formHeading: { color: "#465132", fontSize: 17, fontWeight: "800", marginBottom: 2, textAlign: "right" },
-  primaryButton: { alignItems: "center", backgroundColor: "#6B7B3F", borderRadius: 16, justifyContent: "center", marginTop: 20, minHeight: 56, shadowColor: "#6B7B3F", shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.2, shadowRadius: 10 },
+  content: { flexGrow: 1, justifyContent: "flex-start", paddingBottom: 16, paddingHorizontal: 18, paddingTop: 4 },
+  header: { alignItems: "center", marginBottom: 6, marginTop: 8 },
+  title: { color: "#465132", fontSize: 20, fontWeight: "800", lineHeight: 28, marginTop: 2, textAlign: "center" },
+  subtitle: { color: "#8A8173", fontSize: 14, lineHeight: 21, marginTop: 5, maxWidth: 310, textAlign: "center" },
+  formCard: { backgroundColor: "#FFFDF8", borderColor: "#E4DCCB", borderRadius: 24, borderWidth: 1, gap: 8, padding: 12, shadowColor: "#6B7B3F", shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.07, shadowRadius: 18 },
+  formHeading: { color: "#465132", fontSize: 16, fontWeight: "800", marginBottom: 0, textAlign: "right" },
+  primaryButton: { alignItems: "center", backgroundColor: "#6B7B3F", borderRadius: 16, justifyContent: "center", marginTop: 10, minHeight: 46, shadowColor: "#6B7B3F", shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.2, shadowRadius: 10 },
   primaryButtonPressed: { opacity: 0.86, transform: [{ scale: 0.98 }] },
   primaryButtonText: { color: "#FFFFFF", fontSize: 16, fontWeight: "800" },
-  privacy: { color: "#8A8173", fontSize: 12, lineHeight: 19, marginHorizontal: 14, marginTop: 16, textAlign: "center" },
+  privacy: { color: "#8A8173", fontSize: 12, lineHeight: 18, marginHorizontal: 14, marginTop: 12, textAlign: "center" },
 });
