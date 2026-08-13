@@ -17,7 +17,9 @@ export type NotificationType =
   | "request_accepted"
   | "request_rejected"
   | "chat_message"
-  | "received_rating";
+  | "received_rating"
+  | "payment_confirmed"
+  | "earned_wallet_entry";
 
 export type NotificationRole = "patient" | "provider";
 

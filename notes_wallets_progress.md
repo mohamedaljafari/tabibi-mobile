@@ -1,57 +1,242 @@
-# ملاحظات التقدم — 14 أغسطس (مشروع تطبيق الشريك قيد الإنشاء)
+# ملاحظات التقدم — 14 أغسطس (بناء تطبيق الشريك tabibi-partner)
 
-## الحالة
-- المشروع الجديد: /home/ubuntu/tabibi-partner (نسخة من tabibi-mobile ثم تنظيف شاشات المريض)
-- تم حذف: كل شاشات المريض + _layout.tsx + (tabs) + tests + lib/_e2e (نُقلت incoming-requests وprovider-auth إلى lib/)
-- lib/ الحالي في الشريك: _core/ + chat.ts + notifications.ts + ratings.ts + utils.ts + wallets.ts + provider-auth.ts + incoming-requests.ts
-- مفاتيح مشتركة: provider_accounts_v1، provider_session_v1، service_requests_v1، provider_chat_threads_v1/..._messages_v1، notifications_v1، ratings_v1، wallets_v1
+## الحالة العامة
+- tabibi-mobile (المريض): بيئة webdev نشطة عليه، مكتمل آلية الدفع (checkpoint e18689d0، 152 اختبارًا ناجحًا).
+- tabibi-partner (الشريك): مشروع مستقل في /home/ubuntu/tabibi-partner — بُني يدويًا كنسخة من tabibi-mobile ثم تنظيفه. لا يمكن معاينته بـ webdev tools (البيئة مرتبطة بـ tabibi-mobile). سيعتمد الاختبار على `cd tabibi-partner && pnpm check && pnpm vitest` — **مهم: يجب تشغيل pnpm install أولًا، وربما dev-server على منفذ مختلف (EXPO_PORT=8082)**.
 
-## آلية الدفع النهائية (توضيح المستخدم — يجب التنفيذ هكذا)
-1. المريض يختار الخدمات في doctor-detail ويضغط «طلب الآن» → ينتقل لصفحة الدفع لكن الطلب يبقى «معلق بانتظار قبول مقدم الخدمة».
-2. عند قبول مقدم الخدمة:
-   - نقدي: المريض يؤكد «الدفع نقدي» → إشعار للشريك «تم التأكيد» + قيود المحفظة (مستحق له) → الشريك يتحرك.
-   - إلكتروني: يتم الدفع الإلكتروني أولاً (واجهة بوابة مستقبلية الآن) → تأكيد اكتمال → الشريك يتحرك.
-3. الحقول الجديدة في ServiceRequest: paymentMethod "cash"|"electronic" (تُحفظ عند «طلب الآن»)، paymentStatus "awaiting_provider_acceptance"|"payment_pending"|"confirmed" (يُحدث عند قبول الشريك والتأكيد).
-4. الشريك في طلباته يرى: الخدمات + طريقة الدفع + حالة الدفع، ولا «يتحرك» قبل confirmation.
+## بنية tabibi-partner الحالية
+- lib/: _core/ + chat.ts + notifications.ts + ratings.ts + wallets.ts + utils.ts + provider-auth.ts + incoming-requests.ts
+- app/index.tsx: ما زال بقايا المريض (getPatientProfile) — يجب استبداله.
+- **ناقص: lib/provider-services.ts** — منقول إلى _e2e في المريض: انسخه من /home/ubuntu/tabibi-mobile/lib/_e2e/provider-services.ts إلى /home/ubuntu/tabibi-partner/lib/provider-services.ts (يحوي SPECIALIZATION_SERVICES، getServicesForSpecialization، validateProviderServices، validateAvailability، WEEKDAYS، ProviderService، ProviderAvailability).
+- app.config.ts: ما زال appName=طبيبي slug=tabibi-mobile — يجب تغييره إلى "طبيب شريك" (لا تغير appSlug؟ لا — للشريك slug جديد tabibi-partner).
 
-## المكتبات المنقولة في مشروع الشريك
-- lib/provider-auth.ts: PROVIDER_ROLES، PROVIDER_SPECIALIZATIONS، ProviderAccount، hashPassword، validateRegistration، registerProvider، completeProviderProfile، signInProvider، getSessionAccount، signOutProvider، STORAGE_SESSION_KEY
-- lib/incoming-requests.ts: دوال قراءة/تحديث طلبات الشريك من service_requests_v1
-- lib/service-requests.ts وprovider-registry.ts محذوفة في الشريك (المنطق في incoming-requests) — يجب إعادة فحص هل incoming-requests يحوي كل ما يلزم (updateStatus...)
+## provider-auth.ts (منقول، جاهز):
+- PROVIDER_ROLES، PROVIDER_SPECIALIZATIONS (26 تخصصًا)، ProviderDocument، ProviderAccount (id, fullName, role, phone, passwordHash, status pending|active, specializations, yearsOfExperience, bio, photoUri, documents, services, availability)
+- registerProvider(input)، completeProviderProfile(accountId, input)، signInProvider(phone, password) (يسجل في provider_session_v1)، getSessionAccount، signOutProvider، activateProviderAccount
+- STORAGE_ACCOUNTS_KEY=provider_accounts_v1, STORAGE_SESSION_KEY=provider_session_v1
+- YEARS_OF_EXPERIENCE_OPTIONS = 0..40
+- import نوعي ProviderService/ProviderAvailability من "./provider-services" (الملف المفقود!)
 
-## قرار نهائي (بعد restart أثبت الارتباط بـ tabibi-mobile)
-- بيئة webdev ثابتة على tabibi-mobile؛ لا يمكن توجيهها إلى tabibi-partner داخل نفس المهمة.
-- الحل المتفق مع المستخدم: إكمال كل شيء في هذا المشروع. مشروع tabibi-partner (هيكل + مكتبات مشتركة) سيُسلّم كحزمة ملفات/zip مع نسخة نهائية، ويُنشأ مشروع الشريك الفعلي في مهمة جديدة حيث تكون بيئة webdev خاصة به.
-- آلية الدفع عند الحجز تُنفَّذ في tabibi-mobile (صفحة /payment، حقول paymentMethod/paymentStatus في request).
+## incoming-requests.ts (منقول):
+- IncomingServiceRequest { id, status pending|accepted|rejected|completed|cancelled, patientId/Name/Phone, addressLabel, providerId/Name, specialtyLabel, services[{serviceId,name,price,durationMinutes}], total, notes, providerNotes, respondedAt }
+- readIncomingRequests(providerId)، updateIncomingRequestStatus(providerId, requestId, status, notes?)
+- **ملاحظة: IncomingServiceRequest لا يحوي paymentMethod/paymentStatus بعد!** يجب توسيعه ليشمل paymentMethod/paymentStatus (يملأها تطبيق المريض) وإلا ستعرض الدردشة/الدفع بشكل خاطئ في تطبيق الشريك.
 
-## حالة بيئة webdev
-- preview/webdev tools مرتبطة حاليًا بـ tabibi-mobile فقط (المسار الافتراضي للمشروع النشط). مشروع tabibi-partner أنشئ يدويًا كنسخة من tabibi-mobile، لا يمكن تشغيله عبر نفس dev-server دون إعادة تهيئة المشروع النشط (webdev_init_project سيعيد تعيين المسار).
-- القرار: يجب إخبار المستخدم أن المشروعين المتزامنين في نفس المهمة قد يسبب تعارضًا، وأنسب مسار هو إنشاء مشروع الشريك في مهمة (session) جديدة بطلب مباشر، أو إكمال العمل في هذا المشروع مع العلم أن الاختبارات والتشغيل لمشروع الشريك ستكون يدوية (pnpm dev داخل المسار).
-- ملاحظة: نسخة المريض تعمل الآن على المنفذ 8081، أي dev-server آخر سيتعارض مع المنفذ.
+## الشاشات المطلوبة في tabibi-partner (app/):
+1. index.tsx — بوابة: getSessionAccount → login | setup (profile غير مكتمل) | home
+2. login.tsx — هاتف + كلمة مرور (استخدم signInProvider) + رابط إنشاء حساب
+3. register.tsx — اسم، صفة (role)، هاتف، كلمة مرور + تأكيد (registerProvider)
+4. setup.tsx — تخصصات متعددة، مستندات (اختيار نوع certificate/license/other + uri)، سنوات خبرة، نبذة، صورة اختيارية، خدمات (getServicesForSpecialization + إضافة مخصصة)، مواعيد (availableNow + slots أيّام/ساعات) → completeProviderProfile
+5. _layout.tsx + (tabs): index.tsx (ملف/حالة موثّق) + services.tsx (إدارة الخدمات) + availability.tsx (مواعيد) + requests.tsx (واردة: قبول/رفض + عرض الدفع والتأكيد) + chat.tsx أو profile.tsx حسب عدد التبويبات (5 حد في التطبيقين السابقين)
+- الدردشة (chat.ts ب provider_chat_threads_v1) والأرباح (wallets.ts ب wallets_v1، role=provider) والنظام rating/ratings_v1 موجودة في lib/.
 
-## بقي لمشروع الشريك (tabibi-partner)
-1. app.config.ts: appName=طبيب شريك (الاسم الرسمي المطلوب)، logoUrl جديد
-2. توليد شعار جديد وحفظه assets/images/ + app.config.ts
-3. app/_layout.tsx (root) + app/index.tsx (بوابة: getSessionAccount → login أو home/setup)
-4. app/login.tsx (هاتف+كلمة مرور)، app/register.tsx (اسم/صفة/هاتف/كلمة مرور/تأكيد)، app/setup.tsx (تخصصات متعددة، مستندات، خبرة، نبذة، صورة)
-5. (tabs): _layout.tsx + index.tsx (الرئيسية+حالة موثق) + services.tsx (إدارة خدمات/أسعار/مدد) + availability.tsx (متاح الآن + توقيتات) + requests.tsx (واردة: قبول/رفض، بعد القبول تظهر طريقة الدفع وحالة التأكيد) + chat.tsx + wallet.tsx (أرباح)
-6. ربط الدردشة والأرباح: chat.ts يحتاج chat_v1 من المريض (المفاتيح provider_chat_threads_v1) — موجودة منقولة
-7. اختبارات + نقطة تفتيش لمشروع الشريك
+## آلية الدفع المتفق عليها (للعرض في تطبيق الشريك):
+1. المريض يضغط «طلب الآن» → الطلب بمهالة paymentStatus=awaiting_provider_acceptance.
+2. الشريك يقبل → paymentStatus=payment_pending. يظهر خيارا الدفع للمريض.
+3. نقدي: المريض يؤكد → paymentStatus=confirmed + إشعار + قيود محفظة → الشريك «يتحرك».
+4. إلكتروني: دفع أولًا ثم تأكيد → paymentStatus=confirmed → الشريك يتحرك.
+- في requests.tsx للشريك: عرض طريقة الدفع (cash/electronic) وحالة الدفع؛ قبول الطلب فقط متاح مع «معلق».
 
-## آلية الدفع في تطبيق المريض (tabibi-mobile) — منجزة
-- [x] service-requests.ts: أنواع PaymentMethod/PaymentStatus وحقول paymentMethod/paymentStatus/paymentConfirmedAt + updatePaymentStatus
-- [x] doctor-detail.tsx: اختيار طريقة الدفع Alert ثم العنوان → submitRequest مع paymentMethod → router إلى /payment
-- [x] /payment.tsx: حالة «بانتظار قبول مقدم الخدمة»، بعد القبول: تأكيد نقدي أو إلكتروني → updatePaymentStatus('confirmed') + قيود المحفظة (debit/payment للمريض، credit/earned للشريك) + إشعار payment_confirmed للشريك
-- [x] كل شيء TS نظيف — بقي: اختبار تشغيل كامل + checkpoint، ثم التركيز على حزمة تطبيق الشريك
+## هوية العلامة: زيتوني #6B7B3F، ذهبي #C9A961، خلفية كريمية #F5F0E6 (نفس theme.config.js).
+- يجب توليد شعار جديد للشريك (generate) → assets/images/icon.png + splash-icon.png + favicon.png + android-icon-foreground.png + تحديث logoUrl في app.config.ts.
 
-## نقاط مرجعية
-- admin PIN: 10081460020501 (EXPO_PUBLIC_ADMIN_PIN)
-- هوية: زيتوني #6B7B3F، ذهبي #C9A961، خلفية كريمية #F5F0E6
+## الخطة المتبقية:
+1. نسخ provider-services.ts + توسيع IncomingServiceRequest بحقول الدفع.
+2. كتابة الشاشات: index/login/register/setup + tabs (5: الرئيسية، الخدمات، المواعيد، الطلبات، المحفظة/الدردشة) مع updateProviderServices... (يجب فحص إن كانت دوال تحديث الخدمات موجودة في provider-auth؛ إن لم تكن، اكتبها هنا أو استبدل الحساب كاملًا بـ saveProviderAccounts).
+3. تحديث app.config.ts (طبيب شريك / tabibi-partner / logo).
+4. pnpm install + pnpm check + تشغيل dev-server على منفذ 8082 والتقاط لقطات.
+5. تغليف: zip للمشروع وتسليمه، مع checkpoint لـ tabibi-mobile إن لم يكتمل.
+
+## ملاحظات تشغيل مشروع الشريك محليًا:
+cd /home/ubuntu/tabibi-partner && pnpm install && EXPO_PORT=8082 npx expo start --web --port 8082 (لا يشغل tsx server؛ الشريك مشروع محلي فقط، لا server/)
 
 
-## لقطات التحقق (قبل checkpoint آلية الدفع)
-- / يعرض شاشة تسجيل الدخول (الشعار صحي، حقول الاسم وكلمة المرور، رابط إنشاء حساب) — جيد.
-- /payment يعرض بطاقة الدفع النقدي ٠ دينار + حالة «بانتظار قبول مقدم الخدمة للطلب» + زر متابعة (يعمل كواجهة) — جيد.
-- كل الاختبارات 152 ناجحة، TS نظيف.
-- نقطة التفتيش القادمة: آلية الدفع عند الحجز (service-requests + doctor-detail + /payment).
-- بعده: بناء حزمة تطبيق الشريك /home/ubuntu/tabibi-partner (شاشات كاملة) ثم التغليف والتسليم zip.
+## تحديث (بعد نسخ provider-services):
+- lib/provider-services.ts نُسخت إلى /home/ubuntu/tabibi-partner/lib/ (من tabibi-mobile/lib/_e2e/).
+- incoming-requests.ts في الشريك وُسّع بحقول paymentMethod وpaymentStatus (awaiting_provider_acceptance/payment_pending/confirmed).
+- chat.ts: CHAT_THREADS_KEY=provider_chat_threads_v1, CHAT_MESSAGES_KEY=provider_chat_messages_v1, openThread({requestId, providerId, patientId}), sendMessage(threadId, senderRole "patient"|"provider", text), findThread, readProviderThreads, readMessages, countUnreadMessages.
+- notifications.ts: NotificationType (تحتوي notification types)، NotificationRole "patient"|"provider", createNotification({recipientId, role, type, title, body, requestId?, otherPartyName?}), readRecipientNotifications, markAllNotificationsRead, countUnreadNotifications.
+- wallets.ts: NewWalletEntry {ownerId, ownerId... انظر wallets.ts للميادين بالضبط}, addWalletEntry, getWalletSummary(ownerId), readWalletEntries, WALLETS_KEY=wallets_v1.
+- ratings.ts: readRatings (ProviderRating{providerId, stars, comment, createdAt, patientName}), RatingSummary, readProviderRatingsSummary(providerId).
+- provider-auth.ts: دوال متاحة فقط: registerProvider, completeProviderProfile, activateProviderAccount, signInProvider, getSessionAccount, signOutProvider, listProviderAccounts, saveProviderAccounts, hashPassword, validate*/has*Errors. **لا توجد دوال updateServices/updateAvailability** — يجب تعديل الحساب عبر listProviderAccounts+saveProviderAccounts (حفظ كامل).
+- ProviderAccount fields: id, fullName, role, phone, passwordHash, createdAt, status("pending"|"active"), specializations[], yearsOfExperience, bio, photoUri?, documents[], services[], availability{availableNow, slots[]}.
+- YEARS_OF_EXPERIENCE_OPTIONS موجود في provider-auth.
+- PROVIDER_ROLES, PROVIDER_SPECIALIZATIONS موجودان في provider-auth.
+- provider-services.ts exports: SPECIALIZATION_SERVICES, getServicesForSpecialization, validateProviderServices, hasServicesErrors, validateAvailability, hasAvailabilityErrors, WEEKDAYS, ProviderService, ProviderAvailability.
+
+## بنية app/ للشريك (مخطط):
+- app/_layout.tsx (React Navigation RTL + font... استخدم نمط المريض)
+- app/index.tsx (بوابة حسب getSessionAccount → /login أو /setup أو /(tabs))
+- app/login.tsx، app/register.tsx، app/setup.tsx
+- app/(tabs)/_layout.tsx (5 تبويبات): index (الملف الشخصي) / services / availability / requests / earnings
+- app/(tabs)/index.tsx — بطاقة الحساب: الاسم، الصفة، specialization chips، سنوات الخبرة، النبذة، شارة "موثّق" إذا status=active، تقييم النجوم
+- app/(tabs)/services.tsx — عرض/إضافة/حذف خدمات مع price/duration (تخزين بـ saveProviderAccounts)
+- app/(tabs)/availability.tsx — availableNow toggle + إضافة slots (يوم/بداية/نهاية ساعات)
+- app/(tabs)/requests.tsx — قائمة الطلبات الواردة grouped by status: قبول/رفض + paymentMethod وpaymentStatus معروضة + رابط الدردشة للمقبولة
+- app/(tabs)/earnings.tsx — getWalletSummary(account.id) للمستحق له/مستحق عليه/الرصيد + سجل القيود
+- مكون ChatScreen مشترك يمكن وضعه في app/chat.tsx بـ stack أو شاشة مضمنة
+
+
+## تفاصيل provider-services.ts (الشريك):
+- ProviderService = {id, serviceId?, serviceName, price, durationMinutes?} (انظر الحقول بالضبط في lib/provider-services.ts سطر 16).
+- AvailabilitySlot = {id, day (WEEKDAYS key), startTime, endTime}, ProviderAvailability = {availableNow, slots}.
+- WEEKDAYS, TIME_SLOTS (00-23), SPECIALIZATION_SERVICES (Record<sp, services[]>), getServicesForSpecialization, validateProviderServices, validateAvailability, hasServicesErrors, hasAvailabilityErrors.
+- ProviderAccount: id, fullName, role, phone, passwordHash, createdAt, status("pending"|"active"), specializations[], yearsOfExperience(0=غير محدد), bio, photoUri?, documents[{id,type:"certificate"|"license"|"other",name,uri}], services: ProviderService[], availability: ProviderAvailability.
+- registerProvider({fullName, role, phone, password, confirmPassword}) → status:pending + services/availability فارغة.
+- completeProviderProfile(accountId, input) → يحفظ status:"active" ويحدث الجلسة (session).
+- signInProvider(phone, password), getSessionAccount(), signOutProvider(), listProviderAccounts(), saveProviderAccounts().
+- STORAGE_ACCOUNTS_KEY=provider_accounts_v1, STORAGE_SESSION_KEY=provider_session_v1.
+- STATUS_LABELS: pending="قيد المراجعة", active="موثّق".
+- PROVIDER_ROLES + PROVIDER_SPECIALIZATIONS + YEARS_OF_EXPERIENCE_OPTIONS (0-40).
+
+## حالة ملفات الشريك الحالية:
+- app/ فيه فقط index.tsx (بوابته الحالية تستورد patient-profile المحذوف — يجب إعادته).
+- lib/: chat, incoming-requests, notifications, provider-auth, provider-services, ratings, utils, wallets + _core (من _e2e سابقاً؟ فحص لاحق).
+- components/: address-picker-content(.native)?.tsx (يعتمد على patient-profile المحذوف - احذفه)، form-field.tsx (سليم)، haptic-tab.tsx (سليم)، screen-container.tsx, themed-view.tsx, external-link.tsx, ui/icon-symbol.tsx.
+- ملاحظة: provider-auth يستورد من "./provider-services" محليًا ✓.
+- theme.config.js للشريك موجود بنفس ألوان المشروع (زيتوني/ذهبي).
+- لا يوجد app/_layout.tsx ولا app/(tabs)/ — يجب إنشاؤها.
+- حقل reference في wallets NewWalletEntry: استخدم requestId أو description نصيًا حسب wallets.ts.
+
+## خطوات البناء المتبقية (شاشة شاشة):
+1. app/_layout.tsx (Stack RTL مع font مثل المريض: انسخ من tabibi-mobile/app/_layout.tsx مع تعديل).
+2. app/index.tsx بوابة (getSessionAccount → login).
+3. app/login.tsx + app/register.tsx + app/setup.tsx.
+4. app/(tabs)/_layout.tsx بـ 5 تبويبات + icon mappings في components/ui/icon-symbol.tsx (provider-login أيقونات: home.fill, wrench.fill/screwdriver? "services", calendar? "availability", bell.fill "requests", banknote.fill "earnings" — تحقق من mapping).
+5. app/(tabs)/index.tsx (الملف الشخصي), services.tsx, availability.tsx, requests.tsx, earnings.tsx.
+6. app/chat.tsx شاشة الدردشة للشريك (provider role in sendMessage).
+7. app.config.ts: تحديث appName="طبيب شريك"، bundleId="com.app.tabibipartner"، وlogoUrl جديد.
+8. assets/images: استبدال icon.png/splash/foreground بشعار الشريك (توليد جديد).
+9. tests للشريك (vitest موجودة في package.json — تحقق أنها تعمل مع lib الشريك).
+
+## تحديث: كُتب app/_layout.tsx وapp/register.tsx في الشريك
+- app/_layout.tsx: كُتب بمسارات index, login, register, setup, (tabs), chat, oauth/callback.
+- app/register.tsx: كامل — الاسم، الصفة (FormField + شرائح PROVIDER_ROLES)، الهاتف، كلمة المرور + تأكيد؛ بعد النجاح router.replace("/setup"). يستورد "@/components/form-field" و"@/components/screen-container".
+- register.tsx يستورد RegistrationInput/validateRegistration من provider-auth — تأكد من وجود validateRegistration وRegistrationInput (إن لم تكونا موجودتين أضفهما أو عدّل register لتطابق الدوال الفعلية: registrationFields?).
+- المتبقي: app/index.tsx (بوابة getSessionAccount → login)، login.tsx، setup.tsx (specializations multi + documents + years + bio)، (tabs)×5، chat.tsx، icon-symbol mappings، app.config.ts (طبيب شريك/tabibi-partner + logoUrl)، assets images، pnpm install/check + dev on 8082 + zip delivery.
+
+## حقائق مكتبات الشريك (للبناء)
+
+provider-auth.ts: PROVIDER_ROLES (12: طبيب..أخرى)، PROVIDER_SPECIALIZATIONS (34)، ProviderDocument{id,type:certificate|license|other,name,uri}، ProviderAccount{id,fullName,role,phone,passwordHash:number,createdAt,status:pending|active,specializations[],yearsOfExperience:number,bio,photoUri?,documents[],services:ProviderService[],availability:ProviderAvailability}، RegistrationInput{fullName,role,phone,password,confirmPassword}، ProfileCompletionInput{specializations,yearsOfExperience,bio,documents,services,availability,photoUri?}، STORAGE_SESSION_KEY=provider_session_v1، STATUS_LABELS{pending:"قيد المراجعة",active:"موثّق"}، YEARS_OF_EXPERIENCE_OPTIONS 0-40، hashPassword (returns number)، validateRegistration => {fields:""}, registerProvider(input)=>{success,error,account}، completeProviderProfile(id,input)=>{success,error,account} (يضع status:active ويحفظ الجلسة)، signInProvider(phone,password)=>{success,error,account}، getSessionAccount()=>ProviderAccount|null، signOutProvider()=>Promise، listProviderAccounts/saveProviderAccounts، activateProviderAccount(id).
+ملاحظة: registerProvider يجعل status:"pending" لكن completeProviderProfile يضع status:"active" — هذا خطأ محتمل في المنطق (يُفعّل الحساب تلقائيًا). في تطبيق الشريك يجب استخدام الدالة كما هي (لا يعدّل المنطق إلا إن طلب المستخدم؛ لوحة التحكم لديها activateProviderAccount). الحل: استخدام completeProviderProfile في setup ثم ترك التفعيل للوحة (المستندات تمر للإدارة فعليًا) — يجب تعديل completeProviderProfile ليبقي status:"pending" حتى توافق الإدارة! سأعدّلها.
+
+provider-services.ts: ProviderService{id,name,price,number?,durationMinutes?:} (تأكد من الحقول)، ProviderAvailability{availableNow:boolean,slots:[{day,start,end}]}.
+
+مكتبات مشتركة في lib/ (منقولة): incoming-requests.ts (readIncomingRequests, updateIncomingRequestStatus مع حالات pending/accepted/rejected/completed، حقول paymentMethod/paymentStatus أُضيفت)، chat.ts، notifications.ts، ratings.ts، wallets.ts (addWalletEntry بـ NewWalletEntry{ownerId,ownerName,kind:"credit"|"debit",type,description,amount,reference}, getWalletSummary, getWalletSummaries)، provider-auth.ts.
+
+
+## تحديث مشروع الشريك (المرحلة 2) — بعد ضغط السياق
+- /home/ubuntu/tabibi-partner هو مشروع تطبيق الشريك المستقل (Expo، نفس قاعدة قالب المريض).
+- آلية الدفع في تطبيق المريض منجزة بالكامل + checkpoint e18689d0 (todo: بنود الدفع [x]).
+- تم في الشريك حتى الآن:
+  - lib/provider-auth.ts: 381 سطر (registerProvider بحالة pending، completeProviderProfile يحفظ جلسة ويبقي pending حتى موافقة الإدارة، activateProviderAccount، signInProvider، getSessionAccount، PROVIDER_ROLES/SPECIALIZATIONS، ProviderAccount كامل، hashPassword، validateRegistration).
+  - lib/provider-services.ts: 329 سطر (ProviderService الحقول: id,name,price,duration,category + ProviderAvailability {availableNow,slots} + updateProviderServices/updateProviderAvailability).
+  - lib/incoming-requests.ts: 138 سطر (IncomingServiceRequest مع paymentMethod/paymentStatus + updateIncomingRequestStatus + readIncomingRequests + updatePaymentConfirmation).
+  - lib/chat.ts / notifications.ts / ratings.ts / wallets.ts / utils.ts منقولة.
+  - app/_layout.tsx: 117 سطر جذر تخطيط بالشريك.
+  - app/index.tsx: بوابة getSessionAccount → /home أو /login.
+  - app/register.tsx: شاشة إنشاء حساب (role حقل حر + شريحة PROVIDER_ROLES، phone، password، confirmPassword) تنتقل إلى /setup.
+  - تعديل مهم: completeProviderProfile يبقي status: "pending" حتى توافق الإدارة.
+- بقية الشاشات المطلوب بناؤها:
+  - app/login.tsx (رقم الهاتف + كلمة المرور + زر إنشاء حساب).
+  - app/setup.tsx (إتمام البيانات: تخصصات متعددة، سنوات خبرة، نبذة، مستندات، صورة، خدمات بالأسعار، مواعيد، زر الموافقة/تأكيد → pending + إشعار للإدارة).
+  - app/home.tsx (الصفحة الرئيسية للشريك: الملف الشخصي، حالة موثّق/قيد المراجعة، إحصائيات) + تبويبات: home, requests (الطلبات الواردة), profile.
+  - app/(tabs)/requests.tsx (الطلبات الواردة: قبول/رفض، تفاصيل الخدمات، طريقة الدفع، إشعار للمريض request_accepted/rejected).
+  - app/(tabs)/profile.tsx (الملف الشخصي، تعديل الخدمات/المواعيد/النبذة/الصورة، تسجيل الخروج).
+  - screens: provider-detail غير مطلوبة للشريك؛ الدردشة: استخدام lib/chat (sendChatMessage/getChatMessages) مع شاشة /chat.tsx مشتركة (نسخة من شاشة دردشة المريض معدلة لواجهة الشريك).
+  - الأرباح: استخدام lib/wallets.ts (getWalletSummary ownerId بـ providerId).
+- مفتاح التخزين المشترك للحسابات: provider_accounts_v1 (مطابق بين التطبيقين).
+- ألوان الهوية: olive #6B7B3F, gold #C9A961, خلفية #F5F0E6, كرت #FFFDF8 حدود #E4DCCB.
+- تنبيه: بيئة webdev الحالية معلقة على tabibi-mobile — لن تعمل preview للشريك هنا؛ الاختبار عبر pnpm test فقط (تحتاج vitest config يشير لمشروع الشريك أو تشغيل منفصل).
+- تسجيل دخول الشريك: عبر رقم الهاتف + كلمة المرور (وليس الاسم كالمريض).
+- إشعارات المريض من الشريك: lib/notifications.ts في الشريك تستخدم createNotification بمفتاح patient notifications_v1؟ (التحقق: في الشريك notifications.ts قد تستخدم مفتاحًا آخر — يجب توحيده مع المريض notifications_v1).
+
+
+## تقدم الشريك (حديث)
+- login.tsx للشريك مكتمل: يستخدم signInProvider(phone, password) من provider-auth (يدخل رقم الهاتف وليس الاسم)، حالة "pending" تدخل إلى /home أيضًا (شريط تنبيه "قيد المراجعة")، "frozen" يُعرض تنبيه. الرابط لإنشاء حساب /register.
+- provider-auth: signInProvider يرجع {success, account?, error?}، ProviderAccount فيه id/fullName/role/phone/status(registered|pending|active|frozen)/services/availability/yearsOfExperience/bio/specializations/pictureUri/documents/isVerified.
+- register.tsx مكتوب وينتقل إلى /setup. index.tsx بوابة getSessionAccount → /home أو /login.
+- تبقى: setup.tsx، home.tsx + tabs، requests.tsx (الواردة)، profile.tsx، chat.tsx، earnings/aarnings panel، ثم الشعار + app.config.ts + اختبارات.
+- ملاحظة: يجب التحقق من أن دوال إشعار المريض في مشروع الشريك notifications.ts تستخدم نفس مفتاح patient notifications_v1 (أو أن الطلبات تستخدم createNotification مع key موحدة). الطلبات الواردة في الشريك readIncomingRequests تقرأ من requests أو incoming_requests key — يجب أن يطابق مفتاح service_requests_v1 في المريض.
+
+
+## تقدم الشريك (محدَّث 2)
+شاشات البوابة مكتملة: index.tsx (بوابة getSessionAccount → /home أو /login)، login.tsx (رقم هاتف + كلمة مرور، status pending يدخل /home مع تنبيه)، register.tsx (ينشئ الحساب عبر registerProvider ويذهب /setup)، setup.tsx (التخصصات متعددة PROVIDER_SPECIALIZATIONS، سنوات خبرة، نبذة، مستندات باسم+رابط، completeProviderProfile يحوّل الحالة إلى pending). completeProviderProfile لا يستقبل services/availability فعلية إلا كمصفوفات فارغة افتراضيًا — إدارة الخدمات والمواعيد ستُبنى في home.tsx عبر updateProviderServices/updateAvailability (يجب التحقق من وجودهما في provider-auth أو إضافتهما). المتبقي: home.tsx (الملف + حالة موثّق + شريط pending + إدارات الخدمات/المواعيد)، requests.tsx الواردة (قبول/رفض مع إشعار المريض)، chats.tsx، earnings.tsx (getWalletSummary للشريك)، ثم الشعار والتكوين والاختبارات. ملاحظة: updateProviderServices وupdateAvailability قد لا تكون موجودة في provider-auth — ستحتاج فحص grep ثم إضافة.
+
+## تحديث (بعد دوال التحديث والشاشات المكتوبة):
+- provider-auth.ts: **أُضيفت** updateProviderServices(accountId, services) وupdateProviderAvailability(accountId, availability) في نهاية الملف — كلاهما يرجع {success, error?, account?}.
+- كُتب: app/_layout.tsx، app/index.tsx (بوابة getSessionAccount → login)، app/register.tsx، app/login.tsx (هاتف+كلمة مرور + رابط إنشاء حساب)، app/setup.tsx (تخصصات متعددة + مستندات + خبرة/نبذة).
+- remaining: (tabs)/_layout.tsx + 5 screens (index: الملف/موثّق، services، availability، requests: قبول/رفض+دفع+دردشة، earnings) + chat.tsx + icon-symbol mappings + app.config.ts (طبيب شريك) + الشعار + pnpm install + check + dev 8082 + zip + checkout tabibi-mobile قبل التسليم.
+- incoming-requests: حقول paymentMethod/paymentStatus مضافة (awaiting_provider_acceptance/payment_pending/confirmed) + updatePaymentStatus.
+- wallets NewWalletEntry: {ownerId, ownerName, role "patient"|"provider", kind "credit"|"debit", type, amount, description, reference?} — انظر wallets.ts قبل استخدامها.
+- chat: openThread({requestId, providerId, patientId}), sendMessage(threadId, senderRole "provider"), readProviderThreads(providerId), findThread(requestId, providerId).
+- notifications: createNotification({recipientId, role "patient"|"provider", type, title, body, requestId?, otherPartyName?}).
+- ratings: readProviderRatingsSummary(providerId) => {average, count} تقريبًا.
+
+## تحديث الحالة (بعد كتابة index.tsx وlogin.tsx وsetup.tsx و(tabs)/_layout.tsx):
+- كُتب app/index.tsx (بوابة: getSessionAccount → /login وإلا /(tabs))، login.tsx (هاتف+كلمة مرور، رابط إنشاء حساب)، setup.tsx (specializations متعددة+documents+yearsOfExperience+bio)، app/(tabs)/_layout.tsx (5 تبويبات: index الرئيسي، services الخدمات، availability المواعيد، requests الطلبات، earnings الأرباح)، icon-symbol mappings (briefcase.fill, calendar, banknote.fill, checkmark.seal.fill, arrow.clockwise, paperclip, trash.fill).
+- provider-auth.ts: **أُضيفت** updateProviderServices(accountId, services) وupdateProviderAvailability(accountId, availability) في نهاية الملف — يرجعان {success, error?, account?}.
+- المتبقي: app/(tabs)/index.tsx (الملف الشخصي)، services.tsx، availability.tsx، requests.tsx (قبول/رفض + عرض paymentMethod/paymentStatus + رابط دردشة /chat?id=)، earnings.tsx، app/chat.tsx، app.config.ts (طبيب شريك/tabibi-partner + logoUrl)، توليد الشعار → assets/images (icon/splash/favicon/android-icon-foreground)، pnpm install + check + dev on 8082، اختبار vitest، zip وتسليم.
+- wallets NewWalletEntry: {ownerId, ownerName, role:"patient"|"provider", kind:"credit"|"debit", type, amount, description, reference?} — راجع wallets.ts قبل الاستخدام.
+- chat: openThread({requestId, providerId, patientId}), sendMessage(threadId, senderRole:"provider", text), findThread, readProviderThreads(providerId), readMessages(threadId).
+- notifications: createNotification({recipientId, role:"patient"|"provider", type, title, body, requestId?, otherPartyName?}).
+- ratings: readProviderRatingsSummary(providerId).
+- incoming-requests في الشريك: updateIncomingRequestStatus(providerId, requestId, status) + updatePaymentStatus.
+- حقل passwordHash في ProviderAccount هو number — لا تقارنه مباشرة؛ استخدم signInProvider للتحقق.
+
+## تصحيحات TypeScript في مشروع الشريك (وضع الحفظ):
+الأخطاء المكتشفة عند pnpm run check والحلول المحددة:
+1. `lib/theme-provider` و`lib/trpc` مفقودان → حذفهما من app/_layout.tsx (نسخنا root _layout من المريض لكن لا نحتاج trpc/theme-provider في نسخة الشريك المحلية) أو نسخهما من مشروع المريض. **الحل: نسخ lib/theme-provider.ts وlib/trpc.ts وlib/utils.ts وhooks من مشروع المريض** (موجودة في tabibi-mobile/lib).
+2. register.tsx سطر role: "" لا يقبل union PROVIDER_ROLES → الحل: حذف state.role الافتراضي أو جعله "أخرى" مع ملاحظة أن الحقل النصي الحر موجود؛ أو فصل role عن القائمة.
+3. setup.tsx: ProviderDocument الحقول هي id/type/name/uri (وليس title/documentUri/uploadedAt) → تعديل filledDocs map: ({ id: String(Date.now()+index), type: doc.url.includes("license") ? "license" : doc.url.includes("certificate") ? "certificate" : "other", name: doc.name.trim(), uri: doc.url.trim() }).
+4. setup.tsx: availability.schedule لا يوجد → ProviderAvailability { availableNow: boolean, slots: AvailabilitySlot[] } → استخدام slots: [].
+5. setup.tsx: hasProfileErrors(input) لا يوجد — الدوال هي validateProfileCompletion (يرجع ProfileCompletionValidation {specializations:string}) وhasProfileErrors(errors). → استبدال: const errors = validateProfileCompletion(input); if (hasProfileErrors(errors)) Alert.
+6. setup.tsx router.replace("/home" as never) → يجب أن يكون /(tabs) (التبويبات في app/(tabs)/index).
+7. components/address-picker-content.native.tsx يعتمد على patient-profile → حُذف (rm).
+8. hooks/use-color-scheme.ts يعتمد على theme-provider → بعد نسخ lib/theme-provider.ts يحل.
+
+## أخطاء TS حالية في الشريك + حلولها (تحديث):
+- app/_layout.tsx(18,40): لا يوجد '@/lib/trpc' → حل: حذف سطر trpc من _layout (نسخناه من المريض).
+- register.tsx(17,3): "" غير مقبول لـ role (union PROVIDER_ROLES) → حل: حذف role من state الافتراضي أو بدء value بـ "طبيب".
+- setup.tsx(78,60): ProviderDocument يحتاج { id, type, name, uri } (وليس title/documentUri/uploadedAt).
+- setup.tsx(86,9): ProviderAvailability.slots وليس schedule.
+- setup.tsx(90,37): hasProfileErrors تأخذ ProfileCompletionValidation (وليس input) → يجب: const errors = validateProfileCompletion(input); if (hasProfileErrors(errors)).
+- icon-symbol.tsx mappings المطلوبة للتبويبات: house.fill✓, briefcase.fill→"work", calendar→"event", bell.badge.fill→"notifications"✓, banknote.fill→"attach-money", wallet.pass.fill✓ موجودة.
+ملاحظة: register.tsx استخدم PROVIDER_ROLES كـ role افتراضي → يجب قراءة السطر 17 لمعرفة الحل الدقيق.
+
+## أخطاء TS الحالية (وضع الحفظ 3) — 4 أخطاء متبقية:
+1. app/_layout.tsx(18): سطر `import { trpc, createTRPCClient } from "@/lib/trpc";` + سطر initManusRuntime — الحل: حذفهما مع إزالة استخدامات trpc/subscription في الملف (استبدل التهيئة بـ SafeAreaProvider + initialWindowMetrics فقط، بدون initManusRuntime).
+2. setup.tsx(78): filledDocs.map يحتاج ProviderDocument{id,type,name,uri} → تعديل إلى: `({ id: String(Date.now() + index), type: "certificate", name: doc.name.trim(), uri: doc.url.trim() })` (index من map callback).
+3. setup.tsx(86): availability.slots وليس schedule → `{ availableNow: true, slots: [] }`.
+4. setup.tsx(90): `const errs = validateProfileCompletion(input); if (hasProfileErrors(errs))` (استيراد validateProfileCompletion وhasProfileErrors من provider-auth).
+بعد إصلاحها: كتابة الشاشات المتبقية: app/(tabs)/index.tsx, services.tsx, availability.tsx, requests.tsx, earnings.tsx, app/chat.tsx, ثم app.config.ts والشعار والاختبارات.
+
+
+## تحديث (مرحلة الشاشات) — 14 أغسطس
+- **كُتبت جميع شاشات الشريك**: app/(tabs)/index.tsx (الملف + موثّق + تقييم)، app/(tabs)/services.tsx (خدمات مقترحة + مخصصة + حذف + سعر/مدة)، app/(tabs)/availability.tsx (متاح الآن + slots day/startHour/endHour بدون id)، app/(tabs)/requests.tsx (قبول/رفض/إتمام + عرض طريقة الدفع وحالته + دردشة + إشعار للمريض)، app/(tabs)/earnings.tsx (getWalletSummary)، app/chat.tsx (findThread/readMessages/sendMessage senderRole provider + إشعار دفع + تحديث كل 4 ثوانٍ).
+- **حقائق مهمة**: getSessionAccount **async** (يرجع Promise) — كل الشاشات صُححت. ProviderService{id,name,price,isCustom?,durationMinutes?} بلا category. AvailabilitySlot{day,startHour,endHour} **بلا id**. updateProviderServices/updateProviderAvailability موجودتان في provider-auth. incoming-requests: updateIncomingRequestStatus يقبل status كامل (توسّعت)؛ الدفع paymentMethod(cash/electronic)/paymentStatus(awaiting_provider_acceptance/payment_pending/confirmed) موجود في IncomingServiceRequest.
+- TS errors المتبقية بعد الإصلاحات الأخيرة: briefcase.fill/calendar/banknote.fill mappings ناقصة في icon-symbol.tsx — **يجب إضافتها**: briefcase.fill→"work", calendar→"event", banknote.fill→"attach-money".
+- **المتبقي**: إضافة mappings → pnpm check → pnpm install → dev على 8082 + لقطة → app.config.ts (appName "طبيب شريك" + bundleId جديد + logoUrl) → توليد الشعار → assets (icon/splash/favicon/android-icon-foreground) → todo.md update → checkpoint tabibi-mobile → zip الشريك → تسليم.
+- app.config.ts للشريك حاليًا: appName "طبيبي"، slug tabibi-mobile، logoUrl من مشروع المريض — يجب تحديثه.
+- icon-symbol.tsx_mappings الحالية: house.fill, paperplane.fill, chevron.., person.fill, bell.badge.fill, wallet.pass.fill.
+- اختبارات المريض: 152 اختبارًا في tabibi-mobile (pnpm test) — أبقِها ناجحة عند checkpoint.
+- الشعار المطلوب للشريك: سماعة طبيب/تخطيط قلب، زيتوني #6B7B3F وذهبي #C9A961، مربع ممتلئ (توليد generate).
+
+
+## تحقق بصري للشريك (13 أغسطس مساءً)
+المتصفح المحلي http://127.0.0.1:8082 يعمل بمشروع tabibi-partner (dev عبر nohup pnpm dev على EXPO_PORT=8082، سجل /tmp/partner-dev.log). تم زرع جلسة تجريبية provider_session_v1 + طلب وارد service_requests_v1 + محفظة wallets_v1 من console المتصفح. شاشة الملف الشخصي سليمة (الاسم، الحالة قيد المراجعة، النبذة، الخبرة، التخصصات، الخدمات، تسجيل الخروج، التبويب 5 شغالة). شاشة الخدمات سليمة (خدمات حالية + مقترحة حسب التخصص + إضافة خدمة). التبويب: index=الرئيسية، services=الخدمات، availability=المواعيد، requests=الطلبات، earnings=الأرباح. ملاحظة صغرى: في الملف الشخصي حرف "د" بأفونتر بدل أول حرف الاسم الكامل — السبب أن الحرف الأول من "د." ثم space؛ هذا مقبول. لم تتحقق بعد: المواعيد، الطلبات، الأرباح، chat، setup/register/login. المتبقي: فحص بقية الشاشات، app.config.ts (appName "طبيب شريك"، bundle جديد tabibi.partner، logoUrl)، توليد شعار (سماعة طبية زيتوني/ذهبي)، assets 4 مواضع، todo.md، checkpoint للمريض + zip للشريك + تسليم. اختبارات المريض tabibi-mobile 152 اختبارًا (pnpm test) يجب أن تبقى خضراء.
+
+
+## اكتشاف مهم (فجوة thread الدردشة)
+الدردشة تتطلب ChatThread في provider_chat_threads_v1 يُنشأ عبر openThread({requestId, patientId, patientName, providerId, providerName}) من lib/chat.ts (موجود في tabibi-mobile وtabibi-partner نسخ مشتركة بنفس المفتاح). حاليًا openThread يُستدعى فقط في **الاختبارات** — لا في أي كود تشغيلي! أي أنه بعد قبول الشريك للطلب لا تُنشأ محادثة، وشاشتا الدردشة (مريض وشريك) تعطيان "يجب قبول الطلب أولًا". **الحل المطلوب**: استدعاء openThread داخل منطق القبول في tabibi-partner (عند updateIncomingRequestStatus إلى accepted) — يحتاج قراءة بيانات المريض (patientId/patientName) من الطلب نفسه + providerName من الحساب. ثم إعادة اختبار دورة E2E و152 اختبار المريض.
+حالة التحقق البصري للشريك: الملف الشخصي OK، الخدمات OK، المواعيد OK، الطلبات OK (بعد إصلاح صياغة حالة الدفع نقدي)، الأرباح OK، الدردشة تظهر بانتظار thread. شاشة setup/login OK. المتبقي: إصلاح openThread عند القبول في الشريك، app.config.ts للشريك (طبيب شريك)، شعار، todo.md، checkpoint.
+
+
+## حالة الشريك (آخر تحديث: 13-08-2026 23:35)
+- جميع الشاشات مكتملة ومُختبرة بصريًا: الملف، الخدمات، المواعيد، الطلبات (صياغة الدفع صلحت)، الأرباح، الدردشة (بعد زرع thread).
+- إصلاحان حاسمان: openThread يُفتح تلقائيًا عند قبول الشريك للطلب في app/(tabs)/requests.tsx، وترتيب معطيات updateIncomingRequestStatus(requestId, providerId, status).
+- إشعارات: payment_confirmed وearned_wallet_entry أُضيفت إلى NotificationType في lib/notifications.ts للمشروعين.
+- اختبارات الشريك تعمل: tests/e2e-service-cycle.test.ts (عُدّل: prepareProvider يتوقع pending ثم activateProviderAccount يدويًا)، chat.test.ts، wallets.test.ts — 26 اختبارًا كلها خضراء. lib/service-requests منسوخة من المريض.
+- todo.md للشريك محدّث بالكامل.
+- dev server الشريك على 8082 يعمل.
+- المتبقي: (1) توليد شعار "طبيب شريك" (سماعة طبية، زيتوني #6B7B3F، ذهبي #C9A961، خلفية كريمية، مربع ممتلئ)، (2) تحديث app.config.ts: appName="طبيب شريك"، bundleId جديد، logoUrl، (3) نسخ الشعار: assets/images/icon.png + splash-icon.png + favicon.png + android-icon-foreground.png، (4) حفظ checkpoint لتطبيق المريض e18689d0 + zip لتطبيق الشريك وتسليمهما.
