@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ActivityIndicator, Alert, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import MapView, { Marker, type MapPressEvent, type Region } from "react-native-maps";
@@ -93,19 +93,6 @@ export default function AddressPickerScreen() {
     }
   };
 
-  if (Platform.OS === "web") {
-    return (
-      <ScreenContainer edges={["top", "bottom", "left", "right"]}>
-        <View style={styles.webFallback}>
-          <MaterialIcons name="map" size={42} color="#6B7B3F" />
-          <Text style={styles.webTitle}>اختيار العنوان متاح في تطبيق الجوال</Text>
-          <Text style={styles.webCopy}>افتح تطبيق طبيبي على Android أو iOS لتحديد عنوانك من الخريطة أو باستخدام موقعك الحالي.</Text>
-          <Pressable onPress={() => router.back()} style={({ pressed }) => [styles.confirmButton, pressed && styles.pressed]}><Text style={styles.confirmText}>العودة إلى حسابي</Text></Pressable>
-        </View>
-      </ScreenContainer>
-    );
-  }
-
   return (
     <ScreenContainer edges={["top", "bottom", "left", "right"]}>
       <View style={styles.container}>
@@ -150,7 +137,4 @@ const styles = StyleSheet.create({
   confirmButton: { alignItems: "center", backgroundColor: "#6B7B3F", borderRadius: 16, justifyContent: "center", marginTop: 16, minHeight: 56 },
   confirmText: { color: "#FFFFFF", fontSize: 16, fontWeight: "800" },
   pressed: { opacity: 0.84, transform: [{ scale: 0.98 }] },
-  webFallback: { alignItems: "center", flex: 1, justifyContent: "center", padding: 28 },
-  webTitle: { color: "#465132", fontSize: 22, fontWeight: "800", marginTop: 15, textAlign: "center" },
-  webCopy: { color: "#8A8173", fontSize: 15, lineHeight: 23, marginTop: 9, textAlign: "center" },
 });

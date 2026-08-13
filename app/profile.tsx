@@ -71,7 +71,7 @@ export default function ProfileScreen() {
             <View style={styles.addressText}><Text style={styles.addressLabel}>{address.label}</Text><Text style={styles.addressValue}>{address.addressLabel}</Text></View>
           </View>
         )) : <View style={styles.emptyCard}><MaterialIcons name="location-off" size={22} color="#8A8173" /><Text style={styles.emptyText}>لم تتم إضافة أي عناوين بعد.</Text></View>}
-        <Pressable accessibilityRole="button" onPress={() => router.push({ pathname: "/address-picker", params: { label: nextAddressLabel } })} style={({ pressed }) => [styles.addAddress, pressed && styles.pressed]}><MaterialIcons name="add" size={22} color="#6B7B3F" /><Text style={styles.addAddressText}>{profile.addresses.length === 0 ? "إضافة عنوان" : "إضافة عنوان آخر"}</Text></Pressable>
+        <Pressable accessibilityRole="button" onPress={() => router.push({ pathname: "/address-picker" as never, params: { label: nextAddressLabel } } as never)} style={({ pressed }) => [styles.addAddress, pressed && styles.pressed]}><MaterialIcons name="add" size={22} color="#6B7B3F" /><Text style={styles.addAddressText}>{profile.addresses.length === 0 ? "إضافة عنوان" : "إضافة عنوان آخر"}</Text></Pressable>
 
         {setupComplete ? (
           <View style={styles.recordsSection}>
