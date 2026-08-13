@@ -11,7 +11,9 @@
 import { useCallback, useMemo, useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import { useFocusEffect } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
+import * as Haptics from "expo-haptics";
+import { Platform } from "react-native";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { getPatientProfile } from "@/lib/patient-profile";
@@ -60,6 +62,17 @@ export default function RequestsScreen() {
 
   const pendingCount = useMemo(() => requests.filter((request) => request.status === "pending").length, [requests]);
 
+  const openChat = (item: ServiceRequest) => {
+    if (item.status !== "accepted" && item.status !== "completed") return;
+    if (Platform.OS !== "web") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    router.push({
+      pathname: "/chat",
+      params: { requestId: item.id, providerName: item.providerName },
+    });
+  };
+
   const renderRequest = ({ item }: { item: ServiceRequest }) => {
     const statusStyle = STATUS_STYLES[item.status] ?? STATUS_STYLES.pending;
     return (
@@ -106,7 +119,19 @@ export default function RequestsScreen() {
 
         {item.status === "pending" ? (
           <Text style={styles.pendingHint}>ينتظر رد مقدم الخدمة، ستظهر حالته هنا فور رده.</Text>
-        ) : null}
+        ) : (item.status === "accepted" || item.status === "completed") ? (
+          <Pressable
+            style={({ pressed }) => [styles.chatButton, pressed && { opacity: 0.75 }]}
+            onPress={() => openChat(item)}
+          >
+            <MaterialIcons name="chat" size={16} color="#FFFDF8" />
+            <Text style={styles.chatButtonText}>الدردشة مع مقدم الخدمة</Text>
+          </Pressable>
+        ) : (
+          <Text style={styles.pendingHint}>
+            {item.status === "rejected" ? "يمكنك اختيار مقدم خدمة آخر من نتائج البحث." : ""}
+          </Text>
+        )}
       </View>
     );
   };
@@ -183,6 +208,16 @@ const styles = StyleSheet.create({
   totalLabel: { color: "#8A8173", fontSize: 11, flex: 1, textAlign: "right" },
   totalValue: { color: "#465132", fontSize: 14, fontWeight: "800" },
   pendingHint: { color: "#8A8173", fontSize: 10, lineHeight: 15, textAlign: "right" },
+  chatButton: {
+    alignItems: "center",
+    backgroundColor: "#6B7B3F",
+    borderRadius: 16,
+    flexDirection: "row-reverse",
+    gap: 7,
+    justifyContent: "center",
+    paddingVertical: 10,
+  },
+  chatButtonText: { color: "#FFFDF8", fontSize: 12, fontWeight: "800" },
   emptySection: { alignItems: "center", backgroundColor: "#F0EBDD", borderRadius: 16, gap: 10, margin: 20, padding: 28 },
   emptyText: { color: "#786F61", fontSize: 12, lineHeight: 18, textAlign: "center", paddingHorizontal: 12 },
 });
