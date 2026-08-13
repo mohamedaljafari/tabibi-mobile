@@ -30,7 +30,7 @@ export type ProviderAccount = {
   phone: string;
   passwordHash: number;
   createdAt: number;
-  status: "pending" | "active";
+  status: "pending" | "active" | "frozen" | "cancelled";
   specializations: string[];
   yearsOfExperience: number;
   bio: string;

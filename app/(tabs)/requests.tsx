@@ -9,14 +9,15 @@
  * وتُقرأ هنا من مفتاح التخزين المشترك service_requests_v1.
  */
 import { useCallback, useMemo, useState } from "react";
-import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, FlatList, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { router, useFocusEffect } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { Platform } from "react-native";
 
 import { ScreenContainer } from "@/components/screen-container";
-import { getPatientProfile } from "@/lib/patient-profile";
+import { getPatientProfile, grantMedicalAccess } from "@/lib/patient-profile";
+import { isRequestRated } from "@/lib/ratings";
 import { readPatientRequests, type ServiceRequest } from "@/lib/service-requests";
 
 const STATUS_STYLES: Record<ServiceRequest["status"], { label: string; background: string; text: string }> = {
@@ -61,6 +62,50 @@ export default function RequestsScreen() {
   );
 
   const pendingCount = useMemo(() => requests.filter((request) => request.status === "pending").length, [requests]);
+  const [ratedIds, setRatedIds] = useState<string[]>([]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void (async () => {
+        const ids: string[] = [];
+        for (const request of requests) {
+          if (request.status === "completed" && (await isRequestRated(request.id))) {
+            ids.push(request.id);
+          }
+        }
+        setRatedIds(ids);
+      })();
+    }, [requests]),
+  );
+
+  const openRating = (item: ServiceRequest) => {
+    if (item.status !== "completed") return;
+    if (Platform.OS !== "web") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    router.push({ pathname: "/rate-request", params: { requestId: item.id } });
+  };
+
+  const grantAccess = (item: ServiceRequest) => {
+    const profilePromise = getPatientProfile();
+    void (async () => {
+      try {
+        const profile = await profilePromise;
+        const ownerNames = (profile?.medicalRecords ?? []).map((record) => record.ownerName);
+        if (ownerNames.length === 0) {
+          Alert.alert("لا يوجد ملف طبي", "أنشئ ملفك الطبي من صفحة حسابي أولًا لمنح صلاحية الاطلاع.");
+          return;
+        }
+        await grantMedicalAccess(item.providerId, item.providerName, ownerNames);
+        if (Platform.OS !== "web") {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }
+        Alert.alert("تم منح الصلاحية", `أصبح بإمكان ${item.providerName} الاطلاع على ملفاتك الطبية (لك ولعائلتك). يمكن إلغاء الإذن من شاشة الملف الطبي.`);
+      } catch {
+        Alert.alert("تعذر منح الصلاحية", "حدثت مشكلة أثناء الحفظ، حاول مرة أخرى.");
+      }
+    })();
+  };
 
   const openChat = (item: ServiceRequest) => {
     if (item.status !== "accepted" && item.status !== "completed") return;
@@ -120,13 +165,37 @@ export default function RequestsScreen() {
         {item.status === "pending" ? (
           <Text style={styles.pendingHint}>ينتظر رد مقدم الخدمة، ستظهر حالته هنا فور رده.</Text>
         ) : (item.status === "accepted" || item.status === "completed") ? (
-          <Pressable
-            style={({ pressed }) => [styles.chatButton, pressed && { opacity: 0.75 }]}
-            onPress={() => openChat(item)}
-          >
-            <MaterialIcons name="chat" size={16} color="#FFFDF8" />
-            <Text style={styles.chatButtonText}>الدردشة مع مقدم الخدمة</Text>
-          </Pressable>
+          <View style={styles.actionsRow}>
+            {item.status === "completed" && ratedIds.includes(item.id) ? (
+              <View style={styles.ratedBadge}>
+                <MaterialIcons name="star" size={13} color="#C9A961" />
+                <Text style={styles.ratedText}>تم التقييم</Text>
+              </View>
+            ) : null}
+            {item.status === "completed" && !ratedIds.includes(item.id) ? (
+              <Pressable
+                style={({ pressed }) => [styles.rateButton, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
+                onPress={() => openRating(item)}
+              >
+                <MaterialIcons name="star-rate" size={15} color="#FFFDF8" />
+                <Text style={styles.rateButtonText}>قيّم الخدمة</Text>
+              </Pressable>
+            ) : null}
+            <Pressable
+              style={({ pressed }) => [styles.accessButton, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
+              onPress={() => grantAccess(item)}
+            >
+              <MaterialIcons name="folder-shared" size={15} color="#FFFDF8" />
+              <Text style={styles.accessButtonText}>منح صلاحية الاطلاع على الملف الطبي</Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [styles.chatButton, pressed && { opacity: 0.75 }]}
+              onPress={() => openChat(item)}
+            >
+              <MaterialIcons name="chat" size={16} color="#FFFDF8" />
+              <Text style={styles.chatButtonText}>الدردشة مع مقدم الخدمة</Text>
+            </Pressable>
+          </View>
         ) : (
           <Text style={styles.pendingHint}>
             {item.status === "rejected" ? "يمكنك اختيار مقدم خدمة آخر من نتائج البحث." : ""}
@@ -218,6 +287,43 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   chatButtonText: { color: "#FFFDF8", fontSize: 12, fontWeight: "800" },
+  actionsRow: { alignItems: "center", flexDirection: "row-reverse", gap: 8 },
+  rateButton: {
+    alignItems: "center",
+    backgroundColor: "#C9A961",
+    borderRadius: 16,
+    flexDirection: "row-reverse",
+    gap: 5,
+    justifyContent: "center",
+    paddingVertical: 10,
+    paddingLeft: 16,
+    paddingRight: 16,
+  },
+  rateButtonText: { color: "#FFFDF8", fontSize: 12, fontWeight: "800" },
+  ratedBadge: {
+    alignItems: "center",
+    backgroundColor: "#F0EBDD",
+    borderRadius: 16,
+    flexDirection: "row-reverse",
+    gap: 5,
+    paddingVertical: 10,
+    paddingLeft: 14,
+    paddingRight: 14,
+  },
+  ratedText: { color: "#6B5F4A", fontSize: 11, fontWeight: "800" },
+  accessButton: {
+    alignItems: "center",
+    backgroundColor: "#465132",
+    borderRadius: 16,
+    flexDirection: "row-reverse",
+    flex: 1,
+    gap: 5,
+    justifyContent: "center",
+    paddingVertical: 10,
+    paddingLeft: 12,
+    paddingRight: 12,
+  },
+  accessButtonText: { color: "#FFFDF8", fontSize: 11, fontWeight: "800" },
   emptySection: { alignItems: "center", backgroundColor: "#F0EBDD", borderRadius: 16, gap: 10, margin: 20, padding: 28 },
   emptyText: { color: "#786F61", fontSize: 12, lineHeight: 18, textAlign: "center", paddingHorizontal: 12 },
 });

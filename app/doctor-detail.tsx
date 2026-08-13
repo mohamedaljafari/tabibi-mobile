@@ -29,6 +29,8 @@ import {
 import { createServiceRequest } from "@/lib/service-requests";
 import { createNotification } from "@/lib/notifications";
 import { getPatientProfile } from "@/lib/patient-profile";
+import { getProviderRatingSummary, getProviderRatings, type ProviderRating } from "@/lib/ratings";
+import { useEffect as useEffectRating } from "react";
 
 export default function DoctorDetailScreen() {
   const { specialtyId, providerId, demoDoctorId, addressDetails: addressDetailsParam } = useLocalSearchParams<{
@@ -46,6 +48,8 @@ export default function DoctorDetailScreen() {
   const [addressDetails, setAddressDetails] = useState<string | undefined>(
     addressDetailsParam ? addressDetailsParam : undefined,
   );
+  const [ratingSummary, setRatingSummary] = useState<{ average: number; count: number }>({ average: 0, count: 0 });
+  const [recentRatings, setRecentRatings] = useState<ProviderRating[]>([]);
 
   useEffect(() => {
     readProviderAccounts().then((allAccounts) => {
@@ -58,6 +62,22 @@ export default function DoctorDetailScreen() {
     if (!loaded || !providerId) return null;
     return accounts.find((account) => account.id === providerId) ?? null;
   }, [loaded, accounts, providerId]);
+
+  useEffectRating(() => {
+    if (!provider) return;
+    let cancelled = false;
+    void (async () => {
+      const summary = await getProviderRatingSummary(provider.id);
+      const ratings = await getProviderRatings(provider.id, 3);
+      if (!cancelled) {
+        setRatingSummary(summary);
+        setRecentRatings(ratings);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [provider]);
 
   const demoDoctor = useMemo(() => {
     if (!demoDoctorId) return null;
@@ -245,6 +265,39 @@ export default function DoctorDetailScreen() {
             </View>
           ) : null}
 
+          {provider && ratingSummary.count > 0 ? (
+            <View style={styles.section}>
+              <View style={styles.ratingHeader}>
+                <Text style={styles.sectionTitle}>تقييمات المرضى</Text>
+                <View style={styles.averageBlock}>
+                  <MaterialIcons name="star" size={16} color="#C9A961" />
+                  <Text style={styles.averageText}>
+                    {ratingSummary.average.toFixed(1)}
+                  </Text>
+                  <Text style={styles.countText}>({ratingSummary.count} تقييم)</Text>
+                </View>
+              </View>
+              {recentRatings.map((rating) => (
+                <View key={rating.id} style={styles.ratingCard}>
+                  <View style={styles.ratingCardRow}>
+                    <View style={styles.ratingCardStars}>
+                      {Array.from({ length: 5 }).map((_, index) => (
+                        <MaterialIcons
+                          key={index}
+                          name={index < rating.stars ? "star" : "star-border"}
+                          size={13}
+                          color="#C9A961"
+                        />
+                      ))}
+                    </View>
+                    <Text style={styles.ratingCardDate}>{new Date(rating.createdAt).toLocaleDateString("ar")}</Text>
+                  </View>
+                  {rating.comment ? <Text style={styles.ratingCardComment}>«{rating.comment}» — {rating.patientName}</Text> : null}
+                </View>
+              ))}
+            </View>
+          ) : null}
+
           {provider && provider.services.length > 0 ? (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>الخدمات والأسعار</Text>
@@ -375,4 +428,14 @@ const styles = StyleSheet.create({
   submitButtonText: { color: "#FFFFFF", fontSize: 13, fontWeight: "800" },
   submitPressed: { opacity: 0.9, transform: [{ scale: 0.97 }] },
   pressed: { opacity: 0.78, transform: [{ scale: 0.98 }] },
+  ratingHeader: { alignItems: "center", flexDirection: "row-reverse", justifyContent: "space-between" },
+  averageBlock: { alignItems: "center", backgroundColor: "#FBF7EC", borderRadius: 12, flexDirection: "row-reverse", gap: 5, paddingHorizontal: 10, paddingVertical: 6 },
+  averageText: { color: "#B8943F", fontSize: 14, fontWeight: "800" },
+  countText: { color: "#8A8173", fontSize: 10 },
+  ratingCard: { backgroundColor: "#F8F5ED", borderColor: "#EDE5D6", borderRadius: 14, borderWidth: 1, gap: 6, marginTop: 8, padding: 12 },
+  ratingCardRow: { alignItems: "center", flexDirection: "row-reverse", justifyContent: "space-between" },
+  ratingCardStars: { alignItems: "center", flexDirection: "row-reverse", gap: 2 },
+  ratingCardDate: { color: "#9A907E", fontSize: 10 },
+  ratingCardComment: { color: "#5A624B", fontSize: 11, lineHeight: 17, textAlign: "right" },
+
 });

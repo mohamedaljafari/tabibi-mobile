@@ -16,7 +16,8 @@ export type NotificationType =
   | "request_received"
   | "request_accepted"
   | "request_rejected"
-  | "chat_message";
+  | "chat_message"
+  | "received_rating";
 
 export type NotificationRole = "patient" | "provider";
 

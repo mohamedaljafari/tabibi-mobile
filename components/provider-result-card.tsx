@@ -7,6 +7,7 @@
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
+import { useEffect, useState } from "react";
 
 import {
   formatProviderAvailability,
@@ -14,6 +15,7 @@ import {
   initialsFromName,
   type ProviderAccount,
 } from "@/lib/provider-registry";
+import { getProviderRatingSummary, type RatingSummary } from "@/lib/ratings";
 
 export interface ProviderResultCardProps {
   provider: ProviderAccount;
@@ -28,6 +30,18 @@ export interface ProviderResultCardProps {
 export function ProviderResultCard({ provider, serviceLabel, specialtyId, tint }: ProviderResultCardProps) {
   const price = provider.services[0]?.price ?? 0;
   const hasPhoto = !!provider.photoUri;
+  const [summary, setSummary] = useState<RatingSummary | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const result = await getProviderRatingSummary(provider.id);
+      if (!cancelled && result.count > 0) setSummary(result);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [provider.id]);
 
   return (
     <Pressable
@@ -55,6 +69,14 @@ export function ProviderResultCard({ provider, serviceLabel, specialtyId, tint }
         </View>
         <Text style={styles.service}>{serviceLabel}</Text>
         <View style={styles.meta}>
+          {summary ? (
+            <View style={styles.ratingRow}>
+              <MaterialIcons name="star" size={13} color="#C9A961" />
+              <Text style={styles.ratingText}>
+                {summary.average.toFixed(1)} ({summary.count})
+              </Text>
+            </View>
+          ) : null}
           {formatYearsOfExperience(provider.yearsOfExperience) ? (
             <View style={styles.metaItem}>
               <MaterialIcons name="work-outline" size={14} color="#6B7B3F" />
@@ -93,6 +115,8 @@ const styles = StyleSheet.create({
   meta: { flexDirection: "row-reverse", gap: 9, marginTop: 6 },
   metaItem: { alignItems: "center", flexDirection: "row-reverse", gap: 3 },
   metaText: { color: "#786F61", fontSize: 10 },
+  ratingRow: { alignItems: "center", flexDirection: "row-reverse", gap: 3 },
+  ratingText: { color: "#B8943F", fontSize: 10, fontWeight: "800" },
   bio: { color: "#8A8173", fontSize: 10, lineHeight: 14, marginTop: 4, textAlign: "right" },
   priceBlock: { alignItems: "center", backgroundColor: "#F8F5ED", borderRadius: 11, minWidth: 46, paddingHorizontal: 6, paddingVertical: 7 },
   price: { color: "#5A624B", fontSize: 13, fontWeight: "800" },

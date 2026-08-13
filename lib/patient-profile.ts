@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export const PATIENT_PROFILE_KEY = "tabibi.patient-profile.v1";
+export const MEDICAL_ACCESS_KEY = "medical_access_v1";
 
 export type AddressSource = "map" | "current-location";
 
@@ -14,10 +15,42 @@ export type PatientAddress = {
   createdAt: string;
 };
 
+export type ClinicalEntryType = "diagnosis" | "prescription" | "service";
+
+/**
+ * إدخال سريري ضمن الملف الطبي:
+ * - diagnosis: تشخيص طبي
+ * - prescription: وصفة / دواء
+ * - service: خدمة أُنجزت عبر التطبيق
+ */
+export type ClinicalEntry = {
+  id: string;
+  type: ClinicalEntryType;
+  title: string;
+  details: string;
+  providerName?: string;
+  createdAt: string;
+};
+
 export type MedicalRecord = {
   id: string;
   ownerName: string;
   ownerType: "patient" | "family";
+  createdAt: string;
+  /** إدخالات سريرية (تشخيصات / وصفات / خدمات) يضيفها مقدمو الخدمة المصرح لهم */
+  entries: ClinicalEntry[];
+};
+
+/**
+ * صلاحية الاطلاع على الملف الطبي (مفتاح مشترك medical_access_v1).
+ * يمنح المريض مقدم خدمة محددًا حق الاطلاع على ملفاته الطبية،
+ * ولا يفتح الشريك الملف إلا بصلاحية موجودة.
+ */
+export type MedicalAccessGrant = {
+  id: string;
+  providerId: string;
+  providerName: string;
+  recordOwnerNames: string[];
   createdAt: string;
 };
 
@@ -95,7 +128,10 @@ export async function getPatientProfile(): Promise<PatientProfile | null> {
     return {
       ...profile,
       addresses: Array.isArray(profile.addresses) ? profile.addresses : [],
-      medicalRecords: Array.isArray(profile.medicalRecords) ? profile.medicalRecords : [],
+      medicalRecords: (Array.isArray(profile.medicalRecords) ? profile.medicalRecords : []).map((record) => ({
+        ...record,
+        entries: Array.isArray(record.entries) ? record.entries : [],
+      })),
       isSetupComplete: Boolean(profile.isSetupComplete),
     };
   } catch {
@@ -155,11 +191,107 @@ export async function completeAccountSetup(familyMemberNames: string[]): Promise
       recordNames.add(key);
       return true;
     })
-    .map((owner) => ({ ...owner, id: createId("medical-record"), createdAt: new Date().toISOString() }));
+    .map((owner) => ({ ...owner, id: createId("medical-record"), entries: [], createdAt: new Date().toISOString() }));
 
   return persistProfile({
     ...current,
     medicalRecords: [...currentRecords, ...newRecords],
     isSetupComplete: true,
   });
+}
+
+// ---------------------------------------------------------------------------
+// صلاحية الاطلاع على الملف الطبي وإدخال السجلات السريرية
+// ---------------------------------------------------------------------------
+
+export async function readMedicalAccessGrants(): Promise<MedicalAccessGrant[]> {
+  const raw = await AsyncStorage.getItem(MEDICAL_ACCESS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as MedicalAccessGrant[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+async function persistAccessGrants(grants: MedicalAccessGrant[]) {
+  await AsyncStorage.setItem(MEDICAL_ACCESS_KEY, JSON.stringify(grants));
+}
+
+/**
+ * منح مقدم الخدمة صلاحية الاطلاع على ملفات المريض وأفراد عائلته.
+ * تُلغى الصلاحيات السابقة لنفس مقدم الخدمة وتُستبدل بالجديدة.
+ */
+export async function grantMedicalAccess(
+  providerId: string,
+  providerName: string,
+  recordOwnerNames: string[],
+): Promise<MedicalAccessGrant[]> {
+  const grants = await readMedicalAccessGrants();
+  const others = grants.filter((grant) => grant.providerId !== providerId);
+  if (recordOwnerNames.length === 0) {
+    await persistAccessGrants(others);
+    return others;
+  }
+  const trimmedNames = recordOwnerNames.map((name) => name.trim()).filter((name) => name.length > 0);
+  const grant: MedicalAccessGrant = {
+    id: createId("medical-access"),
+    providerId,
+    providerName: providerName.trim(),
+    recordOwnerNames: trimmedNames,
+    createdAt: new Date().toISOString(),
+  };
+  const next = [...others, grant];
+  await persistAccessGrants(next);
+  return next;
+}
+
+/** إلغاء صلاحية مقدم خدمة محدد عبر معرف الصلاحية */
+export async function revokeMedicalAccess(grantId: string): Promise<MedicalAccessGrant[]> {
+  const grants = await readMedicalAccessGrants();
+  const next = grants.filter((grant) => grant.id !== grantId);
+  await persistAccessGrants(next);
+  return next;
+}
+
+/** التحقق من أن مقدم خدمة مصرح له بملف معين */
+export function isProviderAccessGranted(
+  grants: MedicalAccessGrant[],
+  providerId: string,
+  recordOwnerName: string,
+): boolean {
+  const grant = grants.find((candidate) => candidate.providerId === providerId);
+  if (!grant) return false;
+  return grant.recordOwnerNames.some(
+    (ownerName) => ownerName.toLocaleLowerCase("ar") === recordOwnerName.toLocaleLowerCase("ar"),
+  );
+}
+
+/** التحقق من صلاحية مقدم خدمة لكل الملفات (مفيد للشريك) */
+export function getProviderAccess(grants: MedicalAccessGrant[], providerId: string): MedicalAccessGrant | null {
+  return grants.find((grant) => grant.providerId === providerId) ?? null;
+}
+
+/** إضافة إدخال سريري (تشخيص / وصفة / خدمة) إلى ملف طبي للمالك المعين */
+export async function addClinicalEntry(
+  patientId: string,
+  recordOwnerName: string,
+  entry: Omit<ClinicalEntry, "id" | "createdAt">,
+): Promise<PatientProfile | null> {
+  const current = await getPatientProfile();
+  if (!current) return null;
+  if (current.fullName.trim().toLocaleLowerCase("ar") !== patientId.trim().toLocaleLowerCase("ar")) return null;
+  const records = current.medicalRecords.map((record) =>
+    record.ownerName.toLocaleLowerCase("ar") === recordOwnerName.toLocaleLowerCase("ar")
+      ? {
+          ...record,
+          entries: [
+            ...record.entries,
+            { ...entry, id: createId("entry"), createdAt: new Date().toISOString() },
+          ],
+        }
+      : record,
+  );
+  return persistProfile({ ...current, medicalRecords: records });
 }

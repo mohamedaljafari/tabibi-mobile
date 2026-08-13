@@ -15,6 +15,9 @@ type Service = {
 };
 
 type AdSlide = {
+  id?: string;
+  enabled?: boolean;
+  position?: string;
   eyebrow: string;
   title: string;
   copy: string;
@@ -33,14 +36,37 @@ const SERVICES: Service[] = [
   { title: "الصيدليات", icon: "local-pharmacy", tint: "#A65E67", surface: "#F8ECEE" },
 ];
 
-const AD_SLIDES: AdSlide[] = [
-  { eyebrow: "رعاية من مكانك", title: "خطوة أبسط لصحتك", copy: "اختر الخدمة المناسبة وابدأ طلبك في وقتك.", icon: "favorite-border", accent: "#6B7B3F", accentSoft: "#EFF2E6" },
-  { eyebrow: "خدمة المختبر", title: "تحاليلك أقرب إليك", copy: "ابدأ طلب خدمة المختبر من خلال التطبيق.", icon: "science", accent: "#5D7D9B", accentSoft: "#EAF1F7" },
-  { eyebrow: "الصيدليات", title: "كل ما تحتاجه في مكان واحد", copy: "انتقل إلى خدمات الصيدليات من شبكة طبيبي.", icon: "local-pharmacy", accent: "#A65E67", accentSoft: "#F8ECEE" },
+const DEFAULT_AD_SLIDES: AdSlide[] = [
+  { id: "default-top-1", eyebrow: "رعاية من مكانك", title: "خطوة أبسط لصحتك", copy: "اختر الخدمة المناسبة وابدأ طلبك في وقتك.", icon: "favorite-border", accent: "#6B7B3F", accentSoft: "#EFF2E6" },
+  { id: "default-top-2", eyebrow: "خدمة المختبر", title: "تحاليلك أقرب إليك", copy: "ابدأ طلب خدمة المختبر من خلال التطبيق.", icon: "science", accent: "#5D7D9B", accentSoft: "#EAF1F7" },
+  { id: "default-top-3", eyebrow: "الصيدليات", title: "كل ما تحتاجه في مكان واحد", copy: "انتقل إلى خدمات الصيدليات من شبكة طبيبي.", icon: "local-pharmacy", accent: "#A65E67", accentSoft: "#F8ECEE" },
 ];
+
+const DEFAULT_BOTTOM_AD: AdSlide = {
+  id: "default-bottom-1",
+  eyebrow: "رعاية على مدار الساعة",
+  title: "إسعاف منزلي عند الحاجة",
+  copy: "خدمات طبية منزلية تصلك أينما كنت.",
+  icon: "local-hospital",
+  accent: "#6B7B3F",
+  accentSoft: "#EFF2E6",
+};
+
+const SERVICES_TO_CATALOG_KEY: Record<string, string> = {
+  "طبيب": "doctor",
+  "خدمات طبية مساعدة": "assisted",
+  "صحة نفسية": "mental-health",
+  "التغذية والصحة والجمال": "nutrition",
+  "طب بيطري": "veterinary",
+  "المختبر": "lab",
+  "الصيدليات": "pharmacy",
+};
 
 export default function HomeScreen() {
   const [profile, setProfile] = useState<PatientProfile | null>(null);
+  const [topAds, setTopAds] = useState<AdSlide[]>(DEFAULT_AD_SLIDES);
+  const [visibleServices, setVisibleServices] = useState<Service[]>(SERVICES);
+  const [bottomAd, setBottomAd] = useState<AdSlide>(DEFAULT_BOTTOM_AD);
   const [refreshing, setRefreshing] = useState(false);
   const [activeSlide, setActiveSlide] = useState(0);
   const activeSlideRef = useRef(0);
@@ -51,15 +77,28 @@ export default function HomeScreen() {
   const loadProfile = useCallback(async () => setProfile(await getPatientProfile()), []);
   useEffect(() => { loadProfile(); }, [loadProfile]);
 
+  const loadAdminAds = useCallback(async () => {
+    const { readAdminAds, readServicesCatalog, DEFAULT_AD_SLIDES } = await import("@/lib/admin");
+    const ads = await readAdminAds();
+    const base: AdSlide[] = ads.length > 0 ? (ads as AdSlide[]) : (DEFAULT_AD_SLIDES.map((ad, index) => ({ ...ad, id: ad.title ?? `default-${index}` })) as AdSlide[]);
+    const top = base.filter((ad) => ad.enabled && ad.position === "top");
+    const bottom = base.filter((ad) => ad.enabled && ad.position === "bottom");
+    if (top.length > 0) setTopAds(top.map((ad) => ({ ...ad, icon: ad.icon as AdSlide["icon"] })));
+    if (bottom.length > 0) setBottomAd({ ...bottom[0], icon: bottom[0].icon as AdSlide["icon"] });
+    const catalog = await readServicesCatalog();
+    setVisibleServices(SERVICES.filter((service) => catalog.services.find((item) => item.key === SERVICES_TO_CATALOG_KEY[service.title])?.enabled ?? true));
+  }, []);
+  useEffect(() => { loadAdminAds(); }, [loadAdminAds]);
+
   useEffect(() => {
     const timer = setInterval(() => {
-      const nextSlide = (activeSlideRef.current + 1) % AD_SLIDES.length;
+      const nextSlide = (activeSlideRef.current + 1) % topAds.length;
       carouselRef.current?.scrollToOffset({ offset: nextSlide * bannerWidth, animated: true });
       activeSlideRef.current = nextSlide;
       setActiveSlide(nextSlide);
     }, 4500);
     return () => clearInterval(timer);
-  }, [bannerWidth]);
+  }, [bannerWidth, topAds.length]);
 
   const refresh = async () => {
     setRefreshing(true);
@@ -104,7 +143,7 @@ export default function HomeScreen() {
   };
   const handleSlideEnd = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const index = Math.round(event.nativeEvent.contentOffset.x / bannerWidth);
-    const safeIndex = Math.min(Math.max(index, 0), AD_SLIDES.length - 1);
+    const safeIndex = Math.min(Math.max(index, 0), topAds.length - 1);
     activeSlideRef.current = safeIndex;
     setActiveSlide(safeIndex);
   };
@@ -131,12 +170,12 @@ export default function HomeScreen() {
         <View style={styles.carouselWrap}>
           <FlatList
             ref={carouselRef}
-            data={AD_SLIDES}
+            data={topAds}
             horizontal
             pagingEnabled
             bounces={false}
             decelerationRate="fast"
-            keyExtractor={(item) => item.title}
+            keyExtractor={(item) => item.id ?? item.title}
             onMomentumScrollEnd={handleSlideEnd}
             renderItem={({ item }) => (
               <View style={[styles.adSlide, { width: bannerWidth, backgroundColor: item.accentSoft }]}>
@@ -154,7 +193,7 @@ export default function HomeScreen() {
             showsHorizontalScrollIndicator={false}
           />
           <View style={styles.dots}>
-            {AD_SLIDES.map((slide, index) => <View key={slide.title} style={[styles.dot, index === activeSlide && styles.activeDot]} />)}
+            {topAds.map((slide, index) => <View key={slide.id ?? slide.title} style={[styles.dot, index === activeSlide && styles.activeDot]} />)}
           </View>
         </View>
 
@@ -164,7 +203,7 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.serviceGrid}>
-          {SERVICES.map((service) => (
+          {visibleServices.map((service) => (
             <Pressable key={service.title} accessibilityRole="button" accessibilityLabel={`خدمة ${service.title}`} onPress={() => openService(service.title)} style={({ pressed }) => [styles.serviceCard, pressed && styles.servicePressed]}>
               <View style={[styles.serviceIcon, { backgroundColor: service.surface }]}><MaterialIcons name={service.icon} size={23} color={service.tint} /></View>
               <Text numberOfLines={2} style={styles.serviceTitle}>{service.title}</Text>
@@ -173,8 +212,8 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.bottomBanner}>
-          <View style={styles.bottomGraphic}><MaterialIcons name="support-agent" size={25} color="#6B7B3F" /></View>
-          <View style={styles.bottomCopy}><Text style={styles.bottomTitle}>تحتاج مساعدة في الاختيار؟</Text><Text style={styles.bottomText}>ابدأ طلبًا وسنرتب الخطوة المناسبة لك.</Text></View>
+          <View style={styles.bottomGraphic}><MaterialIcons name={(bottomAd.icon as ComponentProps<typeof MaterialIcons>["name"]) || "support-agent"} size={25} color={bottomAd.accent} /></View>
+          <View style={styles.bottomCopy}><Text style={styles.bottomTitle}>{bottomAd.title}</Text><Text style={styles.bottomText}>{bottomAd.copy}</Text></View>
           <Pressable accessibilityRole="button" accessibilityLabel="بدء طلب خدمة" onPress={() => router.push("/care-request" as never)} style={({ pressed }) => [styles.requestButton, pressed && styles.requestPressed]}><MaterialIcons name="arrow-back" size={19} color="#FFFFFF" /></Pressable>
         </View>
       </ScrollView>

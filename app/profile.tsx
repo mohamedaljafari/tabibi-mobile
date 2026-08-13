@@ -56,7 +56,7 @@ export default function ProfileScreen() {
   return (
     <ScreenContainer edges={["top", "bottom", "left", "right"]}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-        <View style={styles.header}><Pressable accessibilityRole="button" accessibilityLabel="العودة" onPress={() => router.back()} style={({ pressed }) => [styles.back, pressed && styles.pressed]}><MaterialIcons name="arrow-forward" size={23} color="#6B7B3F" /></Pressable><Text style={styles.title}>حسابي</Text></View>
+        <View style={styles.header}><Pressable accessibilityRole="button" accessibilityLabel="العودة" onPress={() => router.back()} style={({ pressed }) => [styles.back, pressed && styles.pressed]}><MaterialIcons name="arrow-forward" size={23} color="#6B7B3F" /></Pressable><Text style={styles.title}>حسابي</Text><Pressable accessibilityRole="button" accessibilityLabel="لوحة التحكم الإدارية" onPress={() => router.push("/admin" as never)} style={({ pressed }) => [styles.adminShield, pressed && styles.pressed]}><MaterialIcons name="shield" size={20} color="#C9A961" /></Pressable></View>
         <Text style={styles.helper}>{setupComplete ? "بيانات حسابك وملفاتك الطبية المسجلة." : "أكمل عنوانك وأضف أفراد العائلة قبل إنشاء الملفات الطبية."}</Text>
 
         <View style={styles.identityCard}>
@@ -76,7 +76,7 @@ export default function ProfileScreen() {
         {setupComplete ? (
           <View style={styles.recordsSection}>
             <Text style={styles.sectionTitle}>الملفات الطبية</Text>
-            {profile.medicalRecords.map((record) => <View key={record.id} style={styles.recordCard}><MaterialIcons name="folder-shared" size={23} color="#6B7B3F" /><View style={styles.addressText}><Text style={styles.addressLabel}>{record.ownerName}</Text><Text style={styles.addressValue}>{record.ownerType === "patient" ? "ملفك الطبي" : "ملف طبي لعائلة المريض"}</Text></View></View>)}
+            {profile.medicalRecords.map((record) => <Pressable key={record.id} accessibilityRole="button" accessibilityLabel={`فتح الملف الطبي لـ ${record.ownerName}`} onPress={() => router.push("/medical-record")} style={({ pressed }) => [styles.recordCard, pressed && styles.pressed]}><MaterialIcons name="folder-shared" size={23} color="#6B7B3F" /><View style={styles.addressText}><Text style={styles.addressLabel}>{record.ownerName}</Text><Text style={styles.addressValue}>{record.ownerType === "patient" ? "ملفك الطبي" : "ملف طبي لعائلة المريض"}</Text></View><MaterialIcons name="chevron-left" size={18} color="#C9A961" /></Pressable>)}
           </View>
         ) : (
           <View style={styles.familySection}>
@@ -98,7 +98,8 @@ const styles = StyleSheet.create({
   loading: { alignItems: "center", flex: 1, justifyContent: "center" },
   header: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
   back: { alignItems: "center", backgroundColor: "#F0EBDD", borderRadius: 18, height: 42, justifyContent: "center", width: 42 },
-  title: { color: "#465132", fontSize: 22, fontWeight: "800" },
+  title: { color: "#465132", flex: 1, fontSize: 22, fontWeight: "800", textAlign: "center" },
+  adminShield: { alignItems: "center", backgroundColor: "#F0EBDD", borderRadius: 18, height: 42, justifyContent: "center", width: 42 },
   helper: { color: "#8A8173", fontSize: 12, lineHeight: 18, marginHorizontal: 12, marginTop: 6, textAlign: "center" },
   identityCard: { alignItems: "center", backgroundColor: "#FFFDF8", borderColor: "#E4DCCB", borderRadius: 18, borderWidth: 1, flexDirection: "row-reverse", gap: 10, marginTop: 10, padding: 10 },
   avatar: { alignItems: "center", backgroundColor: "#F0EBDD", borderRadius: 21, height: 42, justifyContent: "center", width: 42 },
