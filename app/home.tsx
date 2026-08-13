@@ -78,6 +78,10 @@ export default function HomeScreen() {
       router.push("/doctor-specialties" as never);
       return;
     }
+    if (serviceName === "تمريض") {
+      router.push("/nursing-search" as never);
+      return;
+    }
     showServiceNotice(serviceName);
   };
   const handleSlideEnd = (event: NativeSyntheticEvent<NativeScrollEvent>) => {

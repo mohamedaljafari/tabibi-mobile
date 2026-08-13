@@ -95,6 +95,7 @@ export default function RootLayout() {
             <Stack.Screen name="address-picker" />
             <Stack.Screen name="doctor-specialties" />
             <Stack.Screen name="doctor-search" />
+            <Stack.Screen name="nursing-search" />
             <Stack.Screen name="(tabs)" />
             <Stack.Screen name="oauth/callback" />
           </Stack>
