@@ -27,6 +27,7 @@ import {
   type ProviderAccount,
 } from "@/lib/provider-registry";
 import { createServiceRequest } from "@/lib/service-requests";
+import { createNotification } from "@/lib/notifications";
 import { getPatientProfile } from "@/lib/patient-profile";
 
 export default function DoctorDetailScreen() {
@@ -162,6 +163,15 @@ export default function DoctorDetailScreen() {
           durationMinutes: service.durationMinutes,
         })),
         total: totalSelectedPrice,
+      });
+      await createNotification({
+        recipientId: provider.id,
+        role: "provider",
+        type: "request_received",
+        title: "طلب خدمة جديد",
+        body: `لديك طلب جديد من ${profile.fullName}، راجعه في تبويب الطلبات.`,
+        requestId: request.id,
+        otherPartyName: profile.fullName,
       });
       if (Platform.OS !== "web") {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
