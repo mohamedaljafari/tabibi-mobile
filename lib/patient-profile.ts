@@ -61,6 +61,8 @@ export type PatientProfile = {
   addresses: PatientAddress[];
   medicalRecords: MedicalRecord[];
   isSetupComplete: boolean;
+  /** تجزئة كلمة المرور (تُحفظ عند إنشاء الحساب) */
+  passwordHash?: number;
 };
 
 export type RegistrationInput = {
@@ -105,6 +107,15 @@ export function hasRegistrationErrors(errors: RegistrationValidation) {
   return Object.keys(errors).length > 0;
 }
 
+export function hashPassword(password: string): number {
+  // مطابقة لدالة تجزئة حسابات مقدمي الخدمة (lib/_e2e/provider-auth.ts)
+  let hash = 5381;
+  for (let index = 0; index < password.length; index++) {
+    hash = ((hash * 33) + password.charCodeAt(index)) >>> 0;
+  }
+  return hash;
+}
+
 export async function savePatientProfile(input: RegistrationInput): Promise<PatientProfile> {
   const profile: PatientProfile = {
     fullName: input.fullName.trim(),
@@ -113,6 +124,7 @@ export async function savePatientProfile(input: RegistrationInput): Promise<Pati
     addresses: [],
     medicalRecords: [],
     isSetupComplete: false,
+    passwordHash: hashPassword(input.password),
   };
   await AsyncStorage.setItem(PATIENT_PROFILE_KEY, JSON.stringify(profile));
   return profile;
@@ -133,6 +145,7 @@ export async function getPatientProfile(): Promise<PatientProfile | null> {
         entries: Array.isArray(record.entries) ? record.entries : [],
       })),
       isSetupComplete: Boolean(profile.isSetupComplete),
+      passwordHash: typeof profile.passwordHash === "number" ? profile.passwordHash : undefined,
     };
   } catch {
     return null;
@@ -142,6 +155,7 @@ export async function getPatientProfile(): Promise<PatientProfile | null> {
 export async function updatePatientProfile(input: Pick<PatientProfile, "fullName" | "phone">) {
   const current = await getPatientProfile();
   const profile: PatientProfile = {
+    ...current,
     fullName: input.fullName.trim(),
     phone: normalizePhone(input.phone),
     createdAt: current?.createdAt ?? new Date().toISOString(),
@@ -149,8 +163,18 @@ export async function updatePatientProfile(input: Pick<PatientProfile, "fullName
     medicalRecords: current?.medicalRecords ?? [],
     isSetupComplete: current?.isSetupComplete ?? false,
   };
-  await AsyncStorage.setItem(PATIENT_PROFILE_KEY, JSON.stringify(profile));
-  return profile;
+  return persistProfile(profile);
+}
+
+/**
+ * تحديث كلمة المرور فقط (حفظ تجزئة كلمة المرور) دون المساس بأي حقل آخر.
+ * يُستخدم عند أول دخول لحساب قديم لم تُحفظ فيه كلمة المرور.
+ */
+export async function updatePatientPassword(password: string): Promise<PatientProfile> {
+  const current = await getPatientProfile();
+  if (!current) throw new Error("لا يوجد حساب مسجل في هذا التطبيق");
+  const profile: PatientProfile = { ...current, passwordHash: hashPassword(password) };
+  return persistProfile(profile);
 }
 
 function createId(prefix: string) {

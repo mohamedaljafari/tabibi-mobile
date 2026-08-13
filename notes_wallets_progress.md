@@ -58,3 +58,20 @@
 - قيد «مستحق له» عند إتمام الخدمة: لا توجد نقطة إتمام في واجهة المريض أو الشريك (updateRequestStatus موجودة في lib/service-requests.ts سطر 117، تستخدمها اختبارات e2e فقط). الحل: إضافة زر «إنهاء الخدمة/تم إتمام الخدمة» للمريض في app/(tabs)/requests.tsx للطلبات المقبولة (accepted) → عند الضغط يؤكد Alert ثم updateRequestStatus(completed) + قيد earned للشريك + قيد payment للمريض (المريض يدفع مقابل الخدمة المنجزة) + إشعار للشريك.
 - الإعلانات المفعلة: تُقرأ من lib/admin.ts (readAdminAds، AdminAdSlide) — يجب استبدال banners في app/(tabs)/index.tsx بإعلانات loop تلقائي من لوحة التحكم.
 - quote-offers.tsx: قيد الدفع أُضيف (confirmOffer async مع getPatientProfile + addWalletEntry). TypeScript نظيف.
+
+## تحديث 14 أغسطس (متابعة)
+- [x] قيد «مستحق له» عند إتمام الخدمة: زر «أتممت الخدمة» أُضيف في app/(tabs)/requests.tsx (accepted فقط): Alert تأكيد → updateRequestStatus(completed) + قيد debit/payment للمريض + قيد credit/earned للشريك + إشعار للشريك (type: request_received) + router إلى /rate-request. checkpoint: 32106364.
+- [x] ربط الصفحة الرئيسية بالإعلانات: home.tsx loadAdminAds يقرأ readAdminAds مباشرة (بدون import خاطئ) ويستخدم enabled فقط مع fallback للإعلانات الافتراضية، وإعادة ضبط الكروسيل عند تغير topAds.
+- المتبقي الوحيد: بند «شاشة تسجيل الدخول كأول صفحة في التطبيقين»:
+  * المريض: app/index.tsx يجب أن يعرض شاشة دخول (fullName/phone + password) → home إن نجح، وزر «إنشاء حساب» → /register ثم /profile. يجب حفظ كلمة المرور: يُقترح إضافة حقل passwordHash لـ PatientProfile (lib/patient-profile.ts) مع hashPassword (lib/_e2e/provider-auth.ts أو إعادة استخدام). توافق قديم: حسابات بلا hash تُقبل بـphone وحدها عند أول دخول ثم يُحفظ hash من إدخال كلمة المرور (إن توفر حقل).
+  * الشريك: تطبيق الشريك غير منفصل حاليًا — المطلوب إنشاء شاشة /provider-login تستخدم verifyProviderLogin من lib/_e2e/provider-auth.ts مع STORAGE_SESSION_KEY=provider_session_v1، وربطها كصفحة دخول أولية لتجربة الشريك (حاليًا الشريك عبر admin أو e2e فقط). ملاحظة: المستخدم قال التطبيقان — يبدو أن هناك مشروعان منفصلان أو سيُبنى لاحقًا؛ نفّذ ما هو ممكن داخل هذا المشروع.
+- بعد الانتهاء: pnpm test → [x] في todo.md → checkpoint → إبلاغ المستخدم.
+
+
+## تحديث 14 أغسطس 23:00 — تقدم شاشة تسجيل الدخول للمريض
+- [x منجز] login.tsx جديد في app/login.tsx (شعار TabibiBrand + اسم + كلمة مرور + تسجيل دخول + رابط إنشاء حساب → /register).
+- [x] app/index.tsx يوجه إلى /login عند عدم وجود حساب.
+- [x] lib/patient-profile.ts: حقل passwordHash اختياري في PatientProfile + دالة hashPassword + savePatientProfile يحفظ hash + getPatientProfile يمرر hash.
+- [!] تحذير: دالة hashPassword في patient-profile تستخدم (hash*33) ^ charCode بينما provider-auth تستخدم (hash*33 + charCode) — يجب توحيد النسخة (المرجعية: provider-auth).
+- ملاحظة: حسابات قديمة بلا hash: في login.tsx أقبل passwordMatches || !passwordHash ثم أحفظ hash؟ حاليًا لا أحفظ hash عند الدخول الأول — يجب إضافة حفظ hash للحسابات القديمة عند أول دخول ناجح بلا hash.
+- **متبقي للشريك**: لا توجد صفحة دخول شريك في app/. المطلوب: تسجيل دخول شريك (رقم هاتف + كلمة مرور) كصفحة أولى لتطبيق الشريك + زر «إنشاء حساب». التطبيقان في نفس المشروع حاليًا. قرار مطلوب من المستخدم أو نفّذ شاشة /provider-login داخل المشروع مع صفحة دخول أولية للشريك.
