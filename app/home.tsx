@@ -82,6 +82,10 @@ export default function HomeScreen() {
       router.push("/nursing-search" as never);
       return;
     }
+    if (serviceName === "صحة نفسية") {
+      router.push("/mental-health-specialties" as never);
+      return;
+    }
     showServiceNotice(serviceName);
   };
   const handleSlideEnd = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
