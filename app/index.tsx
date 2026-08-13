@@ -13,11 +13,11 @@ export default function EntryScreen() {
 
   return (
     <View style={styles.container}>
-      <ActivityIndicator color="#0B6E99" size="large" />
+      <ActivityIndicator color="#6B7B3F" size="large" />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { alignItems: "center", backgroundColor: "#F5FAFC", flex: 1, justifyContent: "center" },
+  container: { alignItems: "center", backgroundColor: "#F5F0E6", flex: 1, justifyContent: "center" },
 });

@@ -4,7 +4,7 @@ import { router } from "expo-router";
 
 import { FormField } from "@/components/form-field";
 import { ScreenContainer } from "@/components/screen-container";
-import { TabibiLogo } from "@/components/tabibi-logo";
+import { TabibiBrand } from "@/components/tabibi-logo";
 import { hasRegistrationErrors, savePatientProfile, validateRegistration, type RegistrationInput, type RegistrationValidation } from "@/lib/patient-profile";
 
 const INITIAL_FORM: RegistrationInput = { fullName: "", phone: "", password: "", confirmPassword: "" };
@@ -38,8 +38,7 @@ export default function RegisterScreen() {
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.flex}>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           <View style={styles.header}>
-            <TabibiLogo size={72} />
-            <Text style={styles.brand}>طبيبي</Text>
+            <TabibiBrand width={175} />
             <Text style={styles.title}>أهلًا بك في رعايتك المنزلية</Text>
             <Text style={styles.subtitle}>أنشئ حسابك لتبدأ طلب الخدمات الصحية وأنت في منزلك.</Text>
           </View>
@@ -66,13 +65,12 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   content: { paddingBottom: 24, paddingHorizontal: 20, paddingTop: 22 },
   header: { alignItems: "center", marginBottom: 26 },
-  brand: { color: "#0B6E99", fontSize: 17, fontWeight: "800", marginTop: 7 },
-  title: { color: "#12303F", fontSize: 25, fontWeight: "800", lineHeight: 34, marginTop: 16, textAlign: "center" },
-  subtitle: { color: "#58707D", fontSize: 15, lineHeight: 23, marginTop: 7, maxWidth: 310, textAlign: "center" },
-  formCard: { backgroundColor: "#FFFFFF", borderColor: "#D8E8EE", borderRadius: 24, borderWidth: 1, gap: 17, padding: 18, shadowColor: "#245A6E", shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.07, shadowRadius: 18 },
-  formHeading: { color: "#12303F", fontSize: 17, fontWeight: "800", marginBottom: 2, textAlign: "right" },
-  primaryButton: { alignItems: "center", backgroundColor: "#0B6E99", borderRadius: 16, justifyContent: "center", marginTop: 20, minHeight: 56, shadowColor: "#0B6E99", shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.2, shadowRadius: 10 },
+  title: { color: "#465132", fontSize: 25, fontWeight: "800", lineHeight: 34, marginTop: 2, textAlign: "center" },
+  subtitle: { color: "#8A8173", fontSize: 15, lineHeight: 23, marginTop: 7, maxWidth: 310, textAlign: "center" },
+  formCard: { backgroundColor: "#FFFDF8", borderColor: "#E4DCCB", borderRadius: 24, borderWidth: 1, gap: 17, padding: 18, shadowColor: "#6B7B3F", shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.07, shadowRadius: 18 },
+  formHeading: { color: "#465132", fontSize: 17, fontWeight: "800", marginBottom: 2, textAlign: "right" },
+  primaryButton: { alignItems: "center", backgroundColor: "#6B7B3F", borderRadius: 16, justifyContent: "center", marginTop: 20, minHeight: 56, shadowColor: "#6B7B3F", shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.2, shadowRadius: 10 },
   primaryButtonPressed: { opacity: 0.86, transform: [{ scale: 0.98 }] },
   primaryButtonText: { color: "#FFFFFF", fontSize: 16, fontWeight: "800" },
-  privacy: { color: "#758B95", fontSize: 12, lineHeight: 19, marginHorizontal: 14, marginTop: 16, textAlign: "center" },
+  privacy: { color: "#8A8173", fontSize: 12, lineHeight: 19, marginHorizontal: 14, marginTop: 16, textAlign: "center" },
 });

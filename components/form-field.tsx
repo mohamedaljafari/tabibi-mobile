@@ -19,7 +19,7 @@ export function FormField({ label, error, secure = false, style, ...inputProps }
         <TextInput
           {...inputProps}
           style={[styles.input, style]}
-          placeholderTextColor="#82939C"
+          placeholderTextColor="#A19787"
           secureTextEntry={secure && !isVisible}
           textAlign="right"
           textAlignVertical="center"
@@ -31,7 +31,7 @@ export function FormField({ label, error, secure = false, style, ...inputProps }
             onPress={() => setIsVisible((visible) => !visible)}
             style={({ pressed }) => [styles.passwordToggle, pressed && styles.pressed]}
           >
-            {isVisible ? <MaterialIcons name="visibility-off" size={21} color="#58707D" /> : <MaterialIcons name="visibility" size={21} color="#58707D" />}
+            {isVisible ? <MaterialIcons name="visibility-off" size={21} color="#8A8173" /> : <MaterialIcons name="visibility" size={21} color="#8A8173" />}
           </Pressable>
         ) : null}
       </View>
@@ -42,19 +42,19 @@ export function FormField({ label, error, secure = false, style, ...inputProps }
 
 const styles = StyleSheet.create({
   field: { gap: 7 },
-  label: { color: "#173A49", fontSize: 14, fontWeight: "700", lineHeight: 20, textAlign: "right" },
+  label: { color: "#465132", fontSize: 14, fontWeight: "700", lineHeight: 20, textAlign: "right" },
   inputWrap: {
     alignItems: "center",
-    backgroundColor: "#FFFFFF",
-    borderColor: "#D8E8EE",
+    backgroundColor: "#FFFDF8",
+    borderColor: "#E4DCCB",
     borderRadius: 15,
     borderWidth: 1,
     flexDirection: "row",
     minHeight: 56,
   },
   inputError: { borderColor: "#D45454" },
-  input: { color: "#12303F", flex: 1, fontSize: 16, height: 56, paddingHorizontal: 16 },
+  input: { color: "#465132", flex: 1, fontSize: 16, height: 56, paddingHorizontal: 16 },
   passwordToggle: { alignItems: "center", height: 48, justifyContent: "center", width: 48 },
   pressed: { opacity: 0.62 },
-  error: { color: "#B33737", fontSize: 12, lineHeight: 18, textAlign: "right" },
+  error: { color: "#A23E35", fontSize: 12, lineHeight: 18, textAlign: "right" },
 });
