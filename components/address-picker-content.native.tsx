@@ -28,7 +28,7 @@ function formatAddress(
     : `الموقع المحدد (${coordinates.latitude.toFixed(5)}, ${coordinates.longitude.toFixed(5)})`;
 }
 
-export default function AddressPickerScreen() {
+export default function AddressPickerContent() {
   const { label } = useLocalSearchParams<{ label?: string }>();
   const [coordinates, setCoordinates] = useState<Coordinates | null>(null);
   const [source, setSource] = useState<AddressSource>("map");

@@ -4,7 +4,7 @@ import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 
 import { ScreenContainer } from "@/components/screen-container";
 
-export default function AddressPickerWebScreen() {
+export default function AddressPickerContent() {
   return (
     <ScreenContainer edges={["top", "bottom", "left", "right"]}>
       <View style={styles.container}>
