@@ -4,7 +4,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 
 import { ScreenContainer } from "@/components/screen-container";
-import { getOfferSourceLabel, getPaymentMethodLabel, getQuoteOffers, type LocalPaymentMethod, type QuoteOfferFilter, type QuoteOfferSource } from "@/lib/quote-offers";
+import { getOfferSourceLabel, getPaymentMethodLabel, getQuoteOfferRating, getQuoteOffers, QUOTE_OFFER_SORT_LABELS, type LocalPaymentMethod, type QuoteOfferFilter, type QuoteOfferQuery, type QuoteOfferSort, type QuoteOfferSource } from "@/lib/quote-offers";
 
 const FILTERS: { id: QuoteOfferFilter; label: string }[] = [
   { id: "all", label: "الكل" },
@@ -12,19 +12,43 @@ const FILTERS: { id: QuoteOfferFilter; label: string }[] = [
   { id: "lab", label: "المختبرات" },
 ];
 
+const PRICE_LIMITS: { id: number | null; label: string }[] = [
+  { id: null, label: "الكل" },
+  { id: 100, label: "حتى 100" },
+  { id: 150, label: "حتى 150" },
+  { id: 200, label: "حتى 200" },
+];
+
+const DISTANCE_LIMITS: { id: number | null; label: string }[] = [
+  { id: null, label: "الكل" },
+  { id: 2, label: "حتى 2 كم" },
+  { id: 4, label: "حتى 4 كم" },
+  { id: 6, label: "حتى 6 كم" },
+];
+
 export default function QuoteOffersScreen() {
   const params = useLocalSearchParams<{ source?: QuoteOfferSource }>();
   const initialFilter: QuoteOfferFilter = params.source === "pharmacy" || params.source === "lab" ? params.source : "all";
   const [filter, setFilter] = useState<QuoteOfferFilter>(initialFilter);
+  const [sort, setSort] = useState<QuoteOfferSort>("price-asc");
+  const [maxPrice, setMaxPrice] = useState<number | null>(null);
+  const [maxDistanceKm, setMaxDistanceKm] = useState<number | null>(null);
   const [selectedOfferId, setSelectedOfferId] = useState<string | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<LocalPaymentMethod | null>(null);
   const [isConfirmed, setIsConfirmed] = useState(false);
-  const offers = useMemo(() => getQuoteOffers(filter), [filter]);
-  const selectedOffer = useMemo(() => getQuoteOffers("all").find((offer) => offer.id === selectedOfferId) ?? null, [selectedOfferId]);
+  const query: QuoteOfferQuery = useMemo(() => ({ filter, sort, maxPrice, maxDistanceKm }), [filter, sort, maxPrice, maxDistanceKm]);
+  const offers = useMemo(() => getQuoteOffers(query), [query]);
+  const selectedOffer = useMemo(() => getQuoteOffers({ ...query, filter: "all", sort: "price-asc", maxPrice: null, maxDistanceKm: null }).find((offer) => offer.id === selectedOfferId) ?? null, [selectedOfferId]);
   const visibleOffers = isConfirmed && selectedOffer ? [selectedOffer] : offers;
 
   const changeFilter = (nextFilter: QuoteOfferFilter) => {
     setFilter(nextFilter);
+    setSelectedOfferId(null);
+    setPaymentMethod(null);
+    setIsConfirmed(false);
+  };
+
+  const resetToggles = () => {
     setSelectedOfferId(null);
     setPaymentMethod(null);
     setIsConfirmed(false);
@@ -54,6 +78,21 @@ export default function QuoteOffersScreen() {
 
         {!isConfirmed ? <View style={styles.filterRow}>{FILTERS.map((item) => <Pressable key={item.id} accessibilityRole="button" onPress={() => changeFilter(item.id)} style={({ pressed }) => [styles.filterButton, filter === item.id && styles.filterButtonActive, pressed && styles.pressed]}><Text style={[styles.filterText, filter === item.id && styles.filterTextActive]}>{item.label}</Text></Pressable>)}</View> : null}
 
+        {!isConfirmed ? <View style={styles.filterSection}>
+          <Text style={styles.filterSectionTitle}>فرز حسب</Text>
+          <View style={styles.sortRow}>{Object.entries(QUOTE_OFFER_SORT_LABELS).map(([id, label]) => <Pressable key={id} accessibilityRole="button" onPress={() => { setSort(id as QuoteOfferSort); resetToggles(); }} style={({ pressed }) => [styles.sortChip, sort === id && styles.sortChipActive, pressed && styles.pressed]}><MaterialIcons name={id === "price-asc" ? "attach-money" : id === "price-desc" ? "monetization-on" : id === "distance" ? "near-me" : "star"} size={15} color={sort === id ? "#FFFFFF" : "#786F61"} /><Text style={[styles.sortChipText, sort === id && styles.sortChipTextActive]}>{label}</Text></Pressable>)}</View>
+          <View style={styles.limitRow}>
+            <View style={styles.limitGroup}>
+              <Text style={styles.filterSectionTitle}>سعر حتى</Text>
+              <View style={styles.limitChips}>{PRICE_LIMITS.map((item) => <Pressable key={String(item.id ?? "all")} accessibilityRole="button" onPress={() => { setMaxPrice(item.id); resetToggles(); }} style={({ pressed }) => [styles.limitChip, maxPrice === item.id && styles.limitChipActive, pressed && styles.pressed]}><Text style={[styles.limitChipText, maxPrice === item.id && styles.limitChipTextActive]}>{item.label}</Text></Pressable>)}</View>
+            </View>
+            <View style={styles.limitGroup}>
+              <Text style={styles.filterSectionTitle}>مسافة حتى</Text>
+              <View style={styles.limitChips}>{DISTANCE_LIMITS.map((item) => <Pressable key={String(item.id ?? "all")} accessibilityRole="button" onPress={() => { setMaxDistanceKm(item.id); resetToggles(); }} style={({ pressed }) => [styles.limitChip, maxDistanceKm === item.id && styles.limitChipActive, pressed && styles.pressed]}><Text style={[styles.limitChipText, maxDistanceKm === item.id && styles.limitChipTextActive]}>{item.label}</Text></Pressable>)}</View>
+            </View>
+          </View>
+        </View> : null}
+
         <View style={styles.resultsHeader}><Text style={styles.resultsTitle}>{isConfirmed ? "العرض الذي اخترته" : "العروض المتاحة"}</Text><Text style={styles.resultsCount}>{visibleOffers.length} {visibleOffers.length === 1 ? "عرض" : "عروض"}</Text></View>
 
         {visibleOffers.map((offer) => {
@@ -64,7 +103,7 @@ export default function QuoteOffersScreen() {
               <View style={styles.providerRow}><View style={styles.providerCopy}><Text style={styles.providerName}>{offer.providerName}</Text><Text style={styles.providerSubtitle}>{offer.providerSubtitle}</Text></View><View style={styles.priceBlock}><Text style={styles.price}>{offer.total}</Text><Text style={styles.currency}>د.ل</Text></View></View>
               <View style={styles.detailLine}><MaterialIcons name="check-circle-outline" size={16} color="#6B7B3F" /><Text style={styles.detailText}>{offer.itemsSummary}</Text></View>
               <View style={styles.detailLine}><MaterialIcons name="schedule" size={16} color="#6B7B3F" /><Text style={styles.detailText}>{offer.fulfilment}</Text></View>
-              <View style={styles.detailLine}><MaterialIcons name="place" size={16} color="#6B7B3F" /><Text style={styles.detailText}>{offer.distanceKm} كم · {offer.validUntil}</Text></View>
+              <View style={styles.detailLine}><MaterialIcons name="place" size={16} color="#6B7B3F" /><Text style={styles.detailText}>{offer.distanceKm} كم · {offer.validUntil}</Text><View style={styles.ratingChip}><MaterialIcons name="star" size={12} color="#C9A961" /><Text style={styles.ratingText}>{getQuoteOfferRating(offer).toFixed(1)}</Text></View></View>
               <View style={styles.offerNote}><Text style={styles.noteText}>{offer.note}</Text></View>
             </Pressable>
           );
@@ -96,6 +135,22 @@ const styles = StyleSheet.create({
   notice: { alignItems: "center", backgroundColor: "#EBF1F6", borderRadius: 11, flexDirection: "row-reverse", gap: 6, marginTop: 10, padding: 8 },
   noticeText: { color: "#526E89", flex: 1, fontSize: 11, lineHeight: 16, textAlign: "right" },
   filterRow: { flexDirection: "row-reverse", gap: 5, marginTop: 8 },
+  filterSection: { backgroundColor: "#FFFDF8", borderColor: "#E8E0D1", borderRadius: 13, borderWidth: 1, marginTop: 9, padding: 9 },
+  filterSectionTitle: { color: "#675F53", fontSize: 11, fontWeight: "800", textAlign: "right" },
+  sortRow: { flexDirection: "row-reverse", gap: 5, marginTop: 6 },
+  sortChip: { alignItems: "center", backgroundColor: "#F8F3E8", borderColor: "#E4DCCB", borderRadius: 10, borderWidth: 1, flexDirection: "row-reverse", gap: 4, justifyContent: "center", paddingHorizontal: 8, paddingVertical: 6 },
+  sortChipActive: { backgroundColor: "#6B7B3F", borderColor: "#6B7B3F" },
+  sortChipText: { color: "#786F61", fontSize: 10, fontWeight: "800" },
+  sortChipTextActive: { color: "#FFFFFF" },
+  limitRow: { flexDirection: "row-reverse", gap: 10, marginTop: 8 },
+  limitGroup: { flex: 1 },
+  limitChips: { flexDirection: "row-reverse", gap: 4, marginTop: 5 },
+  limitChip: { backgroundColor: "#F4F8FB", borderColor: "#D8E4ED", borderRadius: 8, borderWidth: 1, paddingHorizontal: 7, paddingVertical: 4 },
+  limitChipActive: { backgroundColor: "#627F9D", borderColor: "#627F9D" },
+  limitChipText: { color: "#526E89", fontSize: 9, fontWeight: "800" },
+  limitChipTextActive: { color: "#FFFFFF" },
+  ratingChip: { alignItems: "center", backgroundColor: "#FAF4E4", borderColor: "#EADDB6", borderRadius: 7, borderWidth: 1, flexDirection: "row-reverse", gap: 2, marginLeft: 4, paddingHorizontal: 5, paddingVertical: 3 },
+  ratingText: { color: "#96772F", fontSize: 10, fontWeight: "800" },
   filterButton: { backgroundColor: "#F8F3E8", borderColor: "#E4DCCB", borderRadius: 11, borderWidth: 1, flex: 1, minHeight: 39, justifyContent: "center" },
   filterButtonActive: { backgroundColor: "#6B7B3F", borderColor: "#6B7B3F" },
   filterText: { color: "#786F61", fontSize: 11, fontWeight: "800", textAlign: "center" },

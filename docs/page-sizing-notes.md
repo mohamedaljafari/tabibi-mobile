@@ -138,3 +138,16 @@ home.tsx: ScreenContainer edges default (top/left/right) — يعمل. register:
 - /care-request: ممتازة — نوع الخدمة + حقلين + زر في شاشة واحدة.
 - pnpm check: 0 أخطاء. pnpm test: 27 passed / 1 skipped.
 - المتبقي: مراجعة todo.md ثم webdev_save_checkpoint ثم تسليم للمستخدم.
+
+## ميزة التصفية والفرز في صفحة العروض (طلب المستخدم الجديد)
+المطلوب: خيارات تصفية وفرز في quote-offers.
+المنجز حتى الآن:
+1. lib/quote-offers.ts: أُضيفت أنواع QuoteOfferSort (price-asc/price-desc/distance/rating) وQuoteOfferQuery (filter/sort/maxPrice/maxDistanceKm)، وتحديث getQuoteOffers لاستقبال query كامل مع فلترة maxPrice وmaxDistanceKm وفرز حسب المطلوب. أُضيف getQuoteOfferRating (تقييم حتمي 4.0-5.0 مبني على hash من id) وQUOTE_OFFER_SORT_LABELS.
+2. tests/quote-offers.test.ts: كُتبت اختبارات جديدة لنموذج query (فرز تصاعدي/تنازلي/مسافة/تقييم + فلترة سعر/مسافة + دمج فلاتر + التسميات).
+المتبقي:
+- تحديث app/quote-offers.tsx: استبدال getQuoteOffers(filter) وgetQuoteOffers("all") بنموذج query، إضافة حالة sort وmaxPrice وmaxDistanceKm، واجهة مستخدم: شريط فرز أفقي (أيقونة + قائمة خيارات) + مرشحان للسعر (حتى 100/150/200/الكل) والمسافة (حتى 2/4/6 كم/الكل). عرض التقييم داخل بطاقة العرض.
+- ملاحظة: بطاقة العرض تعرض حاليًا distanceKm وvalidUntil في سطر واحد؛ عند إضافة التقييم يجب عدم المبالغة في الطول (ضغط الشاشة).
+- ثم: pnpm check + pnpm test + لقطات /quote-offers + checkpoint + تسليم.
+
+## تحقق بصري لصفحة العروض (بعد التصفية والفرز)
+الشاشة تعرض الآن ضمن صندوق مضغوط: أزرار المصدر (الكل/الصيدليات/المختبرات)، قسم "فرز حسب" بأربع شرائح (الأقل سعرًا/الأعلى سعرًا/الأقرب/الأعلى تقييمًا)، وصفَّين للسعر حتى والمسافة حتى. بطاقات العروض تعرض التقييم بشارة ذهبية ضمن سطر المسافة. لا تجاوز في العرض، والتمرير طبيعي. الاختبارات: 34 نجاحًا، TypeScript نظيف.

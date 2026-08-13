@@ -2,6 +2,15 @@ export type QuoteOfferSource = "pharmacy" | "lab";
 export type QuoteOfferFilter = QuoteOfferSource | "all";
 export type LocalPaymentMethod = "electronic" | "cash";
 
+export type QuoteOfferSort = "price-asc" | "price-desc" | "distance" | "rating";
+
+export type QuoteOfferQuery = {
+  filter: QuoteOfferFilter;
+  sort: QuoteOfferSort;
+  maxPrice: number | null;
+  maxDistanceKm: number | null;
+};
+
 export type QuoteOffer = {
   id: string;
   source: QuoteOfferSource;
@@ -90,10 +99,53 @@ const QUOTE_OFFERS: QuoteOffer[] = [
   },
 ];
 
-export function getQuoteOffers(filter: QuoteOfferFilter = "all") {
-  const results = filter === "all" ? QUOTE_OFFERS : QUOTE_OFFERS.filter((offer) => offer.source === filter);
-  return [...results].sort((a, b) => a.total - b.total);
+function getRatingForOffer(offer: QuoteOffer): number {
+  // Deterministic rating seeded from the offer id so the same offer always
+  // has the same rating (4.0 - 5.0 range) across sessions.
+  let hash = 0;
+  for (let i = 0; i < offer.id.length; i += 1) {
+    hash = (hash * 31 + offer.id.charCodeAt(i)) >>> 0;
+  }
+  return 4 + (hash % 11) / 10;
 }
+
+export function getQuoteOfferRating(offer: QuoteOffer): number {
+  return getRatingForOffer(offer);
+}
+
+export function getQuoteOffers(query: QuoteOfferQuery): QuoteOffer[] {
+  let results = query.filter === "all" ? QUOTE_OFFERS : QUOTE_OFFERS.filter((offer) => offer.source === query.filter);
+  const maxPrice = query.maxPrice;
+  if (maxPrice !== null) {
+    results = results.filter((offer) => offer.total <= maxPrice);
+  }
+  const maxDistanceKm = query.maxDistanceKm;
+  if (maxDistanceKm !== null) {
+    results = results.filter((offer) => offer.distanceKm <= maxDistanceKm);
+  }
+  const sorted = [...results].sort((a, b) => {
+    switch (query.sort) {
+      case "price-asc":
+        return a.total - b.total;
+      case "price-desc":
+        return b.total - a.total;
+      case "distance":
+        return a.distanceKm - b.distanceKm;
+      case "rating":
+        return getRatingForOffer(b) - getRatingForOffer(a);
+      default:
+        return a.total - b.total;
+    }
+  });
+  return sorted;
+}
+
+export const QUOTE_OFFER_SORT_LABELS: Record<QuoteOfferSort, string> = {
+  "price-asc": "الأقل سعرًا",
+  "price-desc": "الأعلى سعرًا",
+  distance: "الأقرب",
+  rating: "الأعلى تقييمًا",
+};
 
 export function getOfferSourceLabel(source: QuoteOfferSource) {
   return source === "pharmacy" ? "الصيدليات" : "المختبرات";
