@@ -32,3 +32,29 @@
 - المتبقي: (1) شاشة أرباح الشريك (ضمن admin — إدخال معرّف الشريك + عرض ملخصه)، (2) تشغيل pnpm test، (3) checkpoint، (4) إبلاغ المستخدم.
 - ملاحظة: admin.tsx تبويبه لا يتضمن شريط تبويبات سفلي؛ يضاف نموذج "عرض أرباح مقدم خدمة" داخل تبويب المحفظات (role=provider) موجود فعلاً — يكفي إضافة قسم "استعلام أرباح شريك" يطلب ownerId ويعرض ملخصه.
 - معاينة: https://8081-i4i95wqp8gqqhyfvnhioj-385e6272.us4.manus.computer/admin
+
+
+## المرحلة التالية (طلبات المستخدم الجديدة — 14 أغسطس)
+البنود المعلقة في todo.md:
+1. قيد دفع تلقائي عند تأكيد العرض المدفوع — [x منجز] في app/quote-offers.tsx: confirmOffer يضيف قيد debit/payment لمحفظة المريض (profile.phone/ownerName) بقيمة selectedOffer.total مع reference.
+2. قيد «مستحق له» للشريك عند إتمام الخدمة — [ ] لم يُنفذ. ملاحظة مهمة: لا توجد نقطة تغيير حالة إلى completed في الواجهة الحالية! لم يوجد استدعاء updateRequestStatus في أي شاشة app/*.tsx (فقط admin.tsx سطر 637 يعرض زرًا؛ updateRequestStatus في lib/service-requests.ts:117). يبدو أن تغيير الحالة إلى completed يحدث عبر e2e فقط أو أن هناك زر في admin غير محدد. يجب إضافة زر «إنهاء الخدمة» للمريض في requests.tsx (البطاقة completed) أو عبر admin + إضافة القيود عند التحول إلى completed.
+3. ربط الصفحة الرئيسية بإعلانات لوحة التحكم المفعّلة — [ ] لم يُنفذ. الإعلانات تُقرأ من admin.ts عبر readAdminAds() (lib/admin.ts:72، AdminAdSlide) — يجب استبدال الـ banners الثابتة في index.tsx بإعلانات مفعّلة من لوحة التحكم.
+4. إصلاح أول تسجيل: بعد إنشاء الحساب ينتقل مباشرة إلى صفحة إتمام البيانات بدل شاشة تسجيل الدخول — [ ] لم يُنفذ. تدفق التسجيل: register.tsx (شاشة الاسم/الهاتف/كلمة المرور) وhome.tsx وregistration-success.tsx. عند أول فتح يظهر نموذج تسجيل دخول (الاسم+كلمة المرور) تحت اسم — يجب حفظ جلسة/جلسة تسجيل بعد createAccount والانتقال لصفحة البيانات.
+
+حقائق تقنية:
+- wallets.ts: addWalletEntry({ownerId, ownerName, role:"patient"|"provider", kind:"credit"|"debit", type:"recharge"|"payment"|"refund"| "earned"|"charge", amount, description, reference?}).
+- getPatientProfile() من lib/patient-profile يعطي {phone, fullName, ...}.
+- quote-offers.tsx عروض ثابتة محلية (QUOTE_OFFERS) ولا تحتوي patientPhone/providerId.
+- ServiceRequest: providerId, providerName, specialtyLabel, services[{serviceId,serviceName,price}], total, status, createdAt...
+- admin.tsx تبويب المحفظات موجود (WalletsPanel + ProviderEarningsLookup).
+- الاختبارات: 152 ناجحة (pnpm test).
+
+
+## حقائق إضافية بعد الفحص (14 أغسطس)
+- المستخدم أوضح: يريد صفحة تسجيل الدخول كأول صفحة في التطبيقين (المريض + الشريك). من له حساب يدخل بالاسم وكلمة المرور؛ من ليس له حساب يختار «إنشاء حساب» (زر أسفل) → صفحة التسجيل → صفحة إتمام البيانات (/profile).
+- المريض: screen entry هو app/index.tsx → router.replace حسب profile (حاليًا: profile → home أو profile، لا profile → /register). كلمة المرور تُدخل في register.tsx (form.password) لكن savePatientProfile في lib/patient-profile.ts لا تحفظ كلمة المرور! (PatientProfile بلا حقل password). يجب: حفظ passwordHash في حسابات المريض (مفتاح مستقل أو في profile) + التحقق في شاشة تسجيل الدخول الجديدة.
+- المريض لا يوجد لديه passwordHash مسبقًا في حسابات مسجلة قديمة — يجب التوافق: عند تسجيل الدخول يتحقق من hash محفوظ، وإن لم يكن محفوظًا (حسابات قديمة) يقبل ويحفظ hash من أول دخول، أو يطلب تسجيل جديد.
+- الشريك: لا توجد حاليًا شاشة دخول شريك في app! دوال provider-auth.ts (lib/_e2e/provider-auth.ts، STORAGE_SESSION_KEY=provider_session_v1، hashPassword، validateRegistration، createProviderAccount، verifyProviderLogin موجودة في provider-auth) والـ admin يحفظ password: "" كـ passwordHash عبر addProviderAccount من lib/admin. يجب إنشاء شاشة دخول شريك (/provider-login) تستخدم verifyProviderLogin.
+- قيد «مستحق له» عند إتمام الخدمة: لا توجد نقطة إتمام في واجهة المريض أو الشريك (updateRequestStatus موجودة في lib/service-requests.ts سطر 117، تستخدمها اختبارات e2e فقط). الحل: إضافة زر «إنهاء الخدمة/تم إتمام الخدمة» للمريض في app/(tabs)/requests.tsx للطلبات المقبولة (accepted) → عند الضغط يؤكد Alert ثم updateRequestStatus(completed) + قيد earned للشريك + قيد payment للمريض (المريض يدفع مقابل الخدمة المنجزة) + إشعار للشريك.
+- الإعلانات المفعلة: تُقرأ من lib/admin.ts (readAdminAds، AdminAdSlide) — يجب استبدال banners في app/(tabs)/index.tsx بإعلانات loop تلقائي من لوحة التحكم.
+- quote-offers.tsx: قيد الدفع أُضيف (confirmOffer async مع getPatientProfile + addWalletEntry). TypeScript نظيف.

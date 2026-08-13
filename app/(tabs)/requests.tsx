@@ -18,7 +18,9 @@ import { Platform } from "react-native";
 import { ScreenContainer } from "@/components/screen-container";
 import { getPatientProfile, grantMedicalAccess } from "@/lib/patient-profile";
 import { isRequestRated } from "@/lib/ratings";
-import { readPatientRequests, type ServiceRequest } from "@/lib/service-requests";
+import { readPatientRequests, updateRequestStatus, type ServiceRequest } from "@/lib/service-requests";
+import { createNotification } from "@/lib/notifications";
+import { addWalletEntry } from "@/lib/wallets";
 
 const STATUS_STYLES: Record<ServiceRequest["status"], { label: string; background: string; text: string }> = {
   pending: { label: "قيد الانتظار", background: "#F0EBDD", text: "#8A8173" },
@@ -60,6 +62,66 @@ export default function RequestsScreen() {
       loadRequests();
     }, [loadRequests]),
   );
+
+  const completeRequest = (item: ServiceRequest) => {
+    if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    Alert.alert(
+      "إتمام الخدمة",
+      `هل انتهت الخدمة «${item.services.map((service) => service.serviceName).join("، ")}» بالفعل؟ سيتم تسجيل الدفع في محفظتك وإشعار مقدم الخدمة بمبلغ مستحقاته.`,
+      [
+        { text: "إلغاء", style: "cancel" },
+        {
+          text: "نعم، أتممت الخدمة",
+          onPress: async () => {
+            const updated = await updateRequestStatus(item.id, "completed", "أتمها المريض من تطبيقه");
+            if (!updated) {
+              Alert.alert("تعذّر الإتمام", "لم نتمكن من حفظ حالة الطلب، حاول مرة أخرى.");
+              return;
+            }
+            void (async () => {
+              const profile = await getPatientProfile();
+              if (!profile) return;
+              await createNotification({
+                recipientId: item.providerId,
+                role: "provider",
+                type: "request_received",
+                title: "اكتملت الخدمة",
+                body: `أتم المريض ${profile.fullName} الخدمة «${item.services.map((service) => service.serviceName).join("، ")}» بمبلغ ${item.total} ر.س، وسيُقيّمها قريبًا.`,
+                requestId: item.id,
+                otherPartyName: profile.fullName,
+              });
+              try {
+                await addWalletEntry({
+                  ownerId: profile.phone,
+                  ownerName: profile.fullName,
+                  role: "patient",
+                  kind: "debit",
+                  type: "payment",
+                  amount: item.total,
+                  description: `دفع مقابل خدمة «${item.services.map((service) => service.serviceName).join("، ")}» لمقدم الخدمة ${item.providerName}`,
+                  reference: item.id,
+                });
+                await addWalletEntry({
+                  ownerId: item.providerId,
+                  ownerName: item.providerName,
+                  role: "provider",
+                  kind: "credit",
+                  type: "earned",
+                  amount: item.total,
+                  description: `مستحق من خدمة «${item.services.map((service) => service.serviceName).join("، ")}» للمريض ${profile.fullName}`,
+                  reference: item.id,
+                });
+              } catch {
+                // يُضاف القيد يدويًا من لوحة التحكم في حال تعذّر الحفظ التلقائي.
+              }
+            })();
+            setRequests((current) => current.map((request) => (request.id === item.id ? updated : request)));
+            router.push({ pathname: "/rate-request", params: { requestId: item.id } } as never);
+          },
+        },
+      ],
+    );
+  };
 
   const pendingCount = useMemo(() => requests.filter((request) => request.status === "pending").length, [requests]);
   const [ratedIds, setRatedIds] = useState<string[]>([]);
@@ -195,6 +257,15 @@ export default function RequestsScreen() {
               <MaterialIcons name="chat" size={16} color="#FFFDF8" />
               <Text style={styles.chatButtonText}>الدردشة مع مقدم الخدمة</Text>
             </Pressable>
+            {item.status === "accepted" ? (
+              <Pressable
+                style={({ pressed }) => [styles.completeButton, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
+                onPress={() => completeRequest(item)}
+              >
+                <MaterialIcons name="check-circle" size={15} color="#FFFDF8" />
+                <Text style={styles.completeButtonText}>أتممت الخدمة</Text>
+              </Pressable>
+            ) : null}
           </View>
         ) : (
           <Text style={styles.pendingHint}>
@@ -287,6 +358,16 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   chatButtonText: { color: "#FFFDF8", fontSize: 12, fontWeight: "800" },
+  completeButton: {
+    alignItems: "center",
+    backgroundColor: "#8A8173",
+    borderRadius: 16,
+    flexDirection: "row-reverse",
+    gap: 7,
+    justifyContent: "center",
+    paddingVertical: 10,
+  },
+  completeButtonText: { color: "#FFFDF8", fontSize: 12, fontWeight: "800" },
   actionsRow: { alignItems: "center", flexDirection: "row-reverse", gap: 8 },
   rateButton: {
     alignItems: "center",

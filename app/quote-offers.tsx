@@ -1,9 +1,13 @@
 import { useMemo, useState } from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 
+import * as Haptics from "expo-haptics";
+
 import { ScreenContainer } from "@/components/screen-container";
+import { getPatientProfile } from "@/lib/patient-profile";
+import { addWalletEntry } from "@/lib/wallets";
 import { getOfferSourceLabel, getPaymentMethodLabel, getQuoteOfferRating, getQuoteOffers, QUOTE_OFFER_SORT_LABELS, type LocalPaymentMethod, type QuoteOfferFilter, type QuoteOfferQuery, type QuoteOfferSort, type QuoteOfferSource } from "@/lib/quote-offers";
 
 const FILTERS: { id: QuoteOfferFilter; label: string }[] = [
@@ -54,7 +58,7 @@ export default function QuoteOffersScreen() {
     setIsConfirmed(false);
   };
 
-  const confirmOffer = () => {
+  const confirmOffer = async () => {
     if (!selectedOffer) {
       Alert.alert("اختر عرضًا", "اختر عرضًا واحدًا أولًا للمتابعة إلى طريقة الدفع.");
       return;
@@ -62,6 +66,31 @@ export default function QuoteOffersScreen() {
     if (!paymentMethod) {
       Alert.alert("اختر طريقة الدفع", "اختر الدفع الإلكتروني أو الدفع نقدًا لإتمام اختيار العرض.");
       return;
+    }
+    // قيد «دفع مقابل خدمة» يُسجَّل تلقائيًا في محفظة المريض عند تأكيد العرض المدفوع.
+    const profile = await getPatientProfile();
+    if (profile) {
+      try {
+        await addWalletEntry({
+          ownerId: profile.phone,
+          ownerName: profile.fullName,
+          role: "patient",
+          kind: "debit",
+          type: "payment",
+          amount: selectedOffer.total,
+          description: `دفع مقابل عرض ${selectedOffer.providerName} (${getOfferSourceLabel(selectedOffer.source)}: ${selectedOffer.itemsSummary})`,
+          reference: `عرض ${selectedOffer.id} · ${paymentMethod === "electronic" ? "إلكتروني" : "نقدي"}`,
+        });
+        if (Platform.OS !== "web") {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }
+      } catch (error) {
+        // تسجيل القيود معلوماتي؛ لا يمنع اعتماد العرض، ويُنبَّه المستخدم برسالة.
+        Alert.alert(
+          "تعذّر تسجيل القيد المحاسبي",
+          error instanceof Error ? error.message : "حدث خطأ غير متوقع عند تسجيل الدفع في المحفظة.",
+        );
+      }
     }
     setIsConfirmed(true);
   };

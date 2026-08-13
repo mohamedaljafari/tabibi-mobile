@@ -78,19 +78,26 @@ export default function HomeScreen() {
   useEffect(() => { loadProfile(); }, [loadProfile]);
 
   const loadAdminAds = useCallback(async () => {
-    const { readAdminAds, readServicesCatalog, DEFAULT_AD_SLIDES } = await import("@/lib/admin");
+    const { readAdminAds, readServicesCatalog } = await import("@/lib/admin");
     const ads = await readAdminAds();
-    const base: AdSlide[] = ads.length > 0 ? (ads as AdSlide[]) : (DEFAULT_AD_SLIDES.map((ad, index) => ({ ...ad, id: ad.title ?? `default-${index}` })) as AdSlide[]);
-    const top = base.filter((ad) => ad.enabled && ad.position === "top");
-    const bottom = base.filter((ad) => ad.enabled && ad.position === "bottom");
-    if (top.length > 0) setTopAds(top.map((ad) => ({ ...ad, icon: ad.icon as AdSlide["icon"] })));
-    if (bottom.length > 0) setBottomAd({ ...bottom[0], icon: bottom[0].icon as AdSlide["icon"] });
+    const top = ads.filter((ad) => ad.enabled && ad.position === "top");
+    const bottom = ads.filter((ad) => ad.enabled && ad.position === "bottom");
+    const mappedTop: AdSlide[] = top.length > 0 ? top.map((ad) => ({ ...ad, icon: ad.icon as AdSlide["icon"] })) : DEFAULT_AD_SLIDES;
+    const mappedBottom: AdSlide = bottom.length > 0 ? { ...bottom[0], icon: bottom[0].icon as AdSlide["icon"] } : DEFAULT_BOTTOM_AD;
+    setTopAds(mappedTop);
+    setBottomAd(mappedBottom);
     const catalog = await readServicesCatalog();
     setVisibleServices(SERVICES.filter((service) => catalog.services.find((item) => item.key === SERVICES_TO_CATALOG_KEY[service.title])?.enabled ?? true));
   }, []);
   useEffect(() => { loadAdminAds(); }, [loadAdminAds]);
 
   useEffect(() => {
+    activeSlideRef.current = 0;
+    setActiveSlide(0);
+  }, [topAds]);
+
+  useEffect(() => {
+    if (topAds.length <= 1) return;
     const timer = setInterval(() => {
       const nextSlide = (activeSlideRef.current + 1) % topAds.length;
       carouselRef.current?.scrollToOffset({ offset: nextSlide * bannerWidth, animated: true });
