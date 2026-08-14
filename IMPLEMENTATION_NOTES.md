@@ -485,3 +485,119 @@ todo.md يحتوي قسم «مرحلة: التحكم اليدوي الكامل �
 4. webdev_save_checkpoint ثم تسليم للمستخدم مع الشرح المطلوب سابقًا (كيفية الوصول لتطبيق الشريك ولوحة التحكم).
 5. في التسليم: تذكير أن الإشعارات الحقيقية عبر الإنترنت مؤجلة للاجتماع القادم لأنها تتطلب استضافة/اشتراك خارجي.
 - نقطة التحقق السابقة: 84b67280.
+
+## تحديث 09:06: خطة التنفيذ الحالية (الاقتراحات الثلاثة + المراجعة الأمنية)
+
+مطلب المستخدم: إضافة الاقتراحات الثلاثة (تصدير كل البيانات JSON/Excel، بحث في سجل النشاط، ترحيب بالحساب الفرعي أعلى اللوحة) + مراجعة أمنية شاملة مع تقرير صريح + سؤال: هل جربت التطبيقات من الناحية الأمنية والثغرات؟
+
+### المتبقي للتنفيذ
+1. **تصدير كل البيانات**: إضافة `exportAllDataToExcel` إلى lib/admin-export.ts (شيتات: مقدمو خدمة، مرضى، خدمات، إعلانات، مدن، طلبات خدمات، طلبات استشارات، محفظة/قيود، تقييمات، إشعارات، سجل نشاط، إعدادات المنصة، أطباء خارج) — قراءة عبر دوال admin.ts/libya-cities/wallets/readAuditLog/notifications/consultation-requests. زر «نسخة احتياطية 📥» في SummaryPanel.
+2. **بحث في سجل النشاط**: حقل نصي + فلترة حسب نطاق التاريخ في AuditLogPanel (السطر 2041 في admin-web.tsx) — entries تُحمَّل مرة واحدة وتُفلتر.
+3. **ترحيب بالحساب الفرعي**: AdminPinGate يعيد allowedTabs؛ عند الدخول بحساب فرعي يعرض شريط ترحيب أعلى اللوحة باسم الحساب و«صلاحياتك: N تبويب» (أضف اسم الحساب المعتمد إلى onAuth أو استخدم localStorage لآخر اسم PIN).
+4. **مراجعة أمنية + إصلاحات**:
+   - حفظ حالة PIN بعد الدخول: يجب أن لا تبقى مفتوحة للأبد (اختياري: جلسة تنتهي عند إعادة التحميل — حالياً authenticated=true تستمر في الذاكرة، وهذا مقبول للويب. لكن تأكد عدم حفظ PIN في localStorage).
+   - isValidAdminPin في lib/admin-auth.ts: تحقق من طول 6+، تجزئة؟ فحص الكود.
+   - كلمات مرور المستخدمين: hashPassword في lib/user-auth.ts؟ فحص.
+   - إمكانية الوصول إلى بيانات المستخدمين عبر دوال lib من التطبيق: أي مستخدم يقرأ readServiceRequests/readProviderRequests إلخ — هذا محلي فلا يوجد وصول خارجي حاليًا، لكن بعد الاستضافة المشتركة يُبنى هذا عبر server APIs، وهذا ما يضمنه التقييم لاحقًا.
+5. اختبارات: ADMIN_PIN=123456 pnpm test + pnpm check.
+6. نقطة تحقق + تقرير أمني مختصر في رسالة التسليم.
+7. في التسليم: تذكير أن الإشعارات الحقيقية عبر الإنترنت مؤجلة للاجتماع القادم.
+
+### مرجع مواضع
+- أزرار أزرار/أنماط: secondaryButtonStyle سطر 1565، MonthlyReportPanel سطر 1662 (زر تصدير 1718)، AuditLogPanel سطر 2041 (زر تصدير 2072)، SummaryPanel (ابحث عنه) لأزرار جديدة.
+- allowedTabs تُمرر من AdminPinGate إلى AdminWebScreen؛ setAllowedTabs في AdminWebScreen.
+- ALL_ADMIN_TABS موجودة في lib/admin-pins.ts.
+- نقطة التحقق السابقة: dcec724f.
+
+## فحص أمني أولي (09:10)
+- **إدارة**: PIN يُقارن كنص واضح داخل التطبيق (isValidAdminPin دالة داخلية، لا يمكن تجاوزها من الويب لكن PIN نفسه نص واضح في env/الذاكرة). مقبول كطبقة أولى.
+- **كلمات المرور**: hashPassword تستخدم خوارزمية djb2 عادية تعيد number (32-bit) — ضعيفة (تصادمات كثيرة، لا salt). هذا هو التحسين الأمني الرئيسي: استخدام SHA-256 عبر expo-crypto مع salt.
+- يجب ترقية hashPassword في patient-profile.ts وadmin.ts (نفس الدالة في provider-registry) مع **ترحيل**: الحسابات القديمة تبقى تعمل لأن الدخول يستخدم نفس الخوارزمية — بعد الترقية الحسابات القديمة (بـ hash ضعيف) ستفشل؛ الحل: إعادة تحديث التجزئة عند الدخول الناجح بالـ password القديم أو قبول كلا الشكلين مؤقتًا.
+- **الوصول إلى البيانات**: كل شيء محلي AsyncStorage؛ بعد الانتقال للاستضافة المشتركة (الأحد/الاثنين) تُبنى الطبقة عبر server APIs — يجب ذكره في التقرير.
+
+## تحديث 10:55: التقدم الأمني الحالي
+نفّذتُ: تثبيت expo-crypto في التطبيقين. في patient-profile.ts (تطبيق المريض): hashPasswordStrong (SHA-256 + salt عشوائي 16 بايت، شكل "sha256:{salt}:{hex}")، isStrongHash، verifyPassword (يقبل القوي والقديمة djb2). login.tsx يستخدم verifyPassword + ترقية تلقائية عند الدخول الناجح.
+متبقي:
+1. إضافة updatePatientPasswordStrong إلى patient-profile.ts (مثل updatePatientPassword لكن بالهاش القوي).
+2. تطبيق نفس الترقية في savePatientProfile (حسابات جديدة بالهاش القوي).
+3. تطبيق الشريك /home/ubuntu/tabibi-partner: hashPassword في lib/provider-auth.ts (سطر 148) بنفس الشكل + provider-auth.ts login (سطر 361: `if (account.passwordHash !== hashPassword(password))`) + admin.ts إضافة حساب شريك يدوي (سطر 242 يستخدم hashPassword القديم).
+4. ثم: التصدير الشامل + بحث سجل النشاط + ترحيب الحساب الفرعي + اختبارات + checkpoint + تقرير أمني.
+
+مواضع مهمة:
+- updatePatientPassword في patient-profile.ts: حول سطر 181.
+- provider-auth.ts (الشريك): hashPassword سطر 148، تسجيل سطر 263، دخول سطر 361.
+- admin.ts (المريض): addProviderAccount سطر 242، hashPassword سطر 262.
+- AdminPinGate في admin-web.tsx: يعيد allowedTabs — ترحيب الحساب الفرعي يُبنى هنا أو في أول لوحة SummaryPanel بعرض اسم الحساب وأرقام التبويبات (تُخزن في localStorage باسم accountName عند الدخول الفرعي).
+
+## المرحلة الأمنية (14 أغسطس — بعد موافقة المستخدم على الاقتراحات الثلاثة + سؤاله عن الأمان)
+المطلوب: (1) الاقتراحات الثلاثة الإضافية: نسخ احتياطي شامل (زر تصدير كل البيانات JSON/Excel في لوحة التحكم)، بحث في سجل نشاط الإدارة، رسالة ترحيب بالحساب الفرعي أعلى اللوحة. (2) مراجعة أمنية شاملة + تقرير.
+
+### المنجز في الأمان حتى الآن:
+- expo-crypto مثبت في التطبيقين (tabibi-mobile + tabibi-partner).
+- tabibi-mobile/lib/patient-profile.ts: hashPasswordStrong (SHA-256 + salt) + verifyPassword للترحيل + updatePatientPasswordStrong. تسجيل حساب جديد يستخدم await hashPasswordStrong (سطر 157). login.tsx يستدعي updatePatientPasswordStrong عند الدخول الناجح بالهاش القديم.
+- lib/patient-profile.ts: نوع passwordHash صار number | string.
+- tabibi-partner/lib/provider-auth.ts: hashPasswordStrong + isStrongProviderHash + verifyProviderPassword؛ التسجيل الجديد يستخدمها؛ signInProvider يترقي الهاش القديم عند الدخول.
+- tabibi-mobile/lib/admin.ts: hashPasswordStrong محلية + addProviderAccount (أطباء الخارج المسجلين من اللوحة) تستخدمها.
+- tabibi-mobile/lib/provider-registry.ts: passwordHash: number | string.
+- tsc: 0 أخطاء في تطبيق المريض.
+
+### المتبقي في هذه المرحلة:
+1. الاقتراحات الثلاثة (todo.md قسم «مرحلة: الاقتراحات الإضافية»):
+   - [ ] تصدير شامل (backup): lib/admin-export.ts توجد exportMonthlyReportToExcel + exportAuditLogToExcel — أضف exportAllDataBackup() (JSON من كل المفاتيح: ads, services catalog, providers, patients registry, requests, consultations, chat, ratings, wallets, cities, external doctors, notifications, audit log, settings, pins) + زر في MonthlyReportPanel أو لوحة منفصلة + logAdminAction.
+   - [ ] بحث في AuditLogPanel: input يفلتر entries حسب نص الإجراء (lib/admin-audit-log.ts توجد readAdminAuditLog).
+   - [ ] ترحيب بالحساب الفرعي: بعد دخول sub-PIN في AdminPinGate (isValidAdminPin/resolveAdminTabAccess في admin-web.tsx)، اعرض اسم الحساب الفرعي وصلاحياته في أعلى اللوحة (readAdminPins + currentSubAccount).
+2. استكمال الفحص الأمني المتبقي:
+   - [ ] admin-auth.ts: قوة الرمز الرئيسي (ADMIN_PIN) — فرض حد أدنى 6/8 أرقام.
+   - [ ] user-auth.ts بالمريض: تحقق قوة كلمة المرور (حد أدنى 6، تحذير) + منع كلمات شائعة.
+   - [ ] التحقق من المدخلات: XSS في المحتوى المحفوظ (البنرات/الرسائل) — sanitization في admin-web.tsx عند العرض؟
+   - [ ] حد محاولات PIN للوحة (lockout مؤقت بعد 5 محاولات).
+   - [ ] تثبيت expo-secure-store لمفاتيح حساسة؟ (حاليًا AsyncStorage فقط).
+3. بعد كل شيء: pnpm test في التطبيقين + pnpm check + checkpoint + تقرير أمني للمستخدم + ملاحظة أن الحماية النهائية بعد الاستضافة الأحد/الاثنين.
+
+### نقطة مهمة قبل التسليم:
+- الإشعارات الحقيقية عبر الإنترنت أُجّلت للاجتماع القادم (تتطلب استضافة/اشتراك خارجي) — اذكر ذلك في الرد النهائي.
+- رمز PIN اللوحة الحالي: 10081460020501 (طويل — جيد).
+
+## مرحلة الاقتراحات الإضافية + المراجعة الأمنية (2026-08-14)
+### المكتمل حتى الآن:
+1. **ترقية التجزئة (أمني)**: patient-profile.ts وprovider-auth.ts (تطبيق الشريك) وadmin.ts — SHA-256 مع salt + ترحيل الحسابات القديمة. login.tsx يستخدم verifyPassword ويحدث الهاش عند الدخول الناجح. نوع passwordHash موسّع ليقبل string.
+2. **expo-crypto مثبت** في التطبيقين.
+3. **تصدير Excel**: exportMonthlyReportToExcel + exportAuditLogToExcel + exportWalletLedgerToExcel في lib/admin-export.ts — أزرار في MonthlyReportPanel وAuditLogPanel.
+4. **نسخة احتياطية شاملة**: exportFullBackup في admin-export.ts تجمع FULL_BACKUP_KEYS (~20 مفتاحًا) وتنزل JSON — زر «💾 نسخة احتياطية كاملة» في MonthlyReportPanel مع رسالة backupProgress + تسجيل logAdminAction.
+5. **البحث في سجل النشاط**: مربع بحث searchText + filteredEntries في AuditLogPanel.
+6. **نوع AdminTabAccess جديد** في admin-pins.ts (tabs + subAccountName) — resolveAdminTabAccess يعيد الاسم.
+
+### المتبقي الآن:
+- admin-web.tsx: تحديث AdminPinGate/onAuth ليأخذ AdminTabAccess (سطر 128,134,136,234,242) + تخزين subAccountName في الحالة + **رسالة ترحيب في header** تعرض «مرحبًا بك، [الاسم]» (سطر ~254-258) أو معطّل للحساب الرئيسي.
+- تشغيل الاختبارات: ADMIN_PIN بطول 6+ (157 اختبارًا).
+- ثم: المراجعة الأمنية (فحص: CORS/headers في server?، التحقق من المدخلات، عرض بيانات حساسة في الإشعارات، منع الوصول لمسارات داخلية من التطبيق).
+- حفظ checkpoint ورفع GitHub.
+
+### تفاصيل مهمة:
+- AdminPinGate onAuth: (tabs) => setAllowedTabs(tabs) — يجب أن تصبح setAllowedTabs(access.tabs) + setSubName(access.subAccountName).
+- header موجود في AdminWebScreen سطر 254: عنوان «لوحة تحكم طبيبي» — أضف ترحيبًا بجانب زر الخروج.
+- رسالة الترحيب تظهر فقط عند الدخول بحساب فرعي (subAccountName غير فارغ).
+
+
+---
+
+## المرحلة: الاقتراحات الإضافية + المراجعة الأمنية (14-08-2026)
+
+### الاقتراحات الثلاثة (منجزة)
+1. **النسخ الاحتياطي الشامل**: زر «تصدير نسخة احتياطية» في MonthlyReportPanel — exportFullBackup في lib/admin-export.ts يصدّر كل المفاتيح (ملفات المرضى، الشريك، المحفظات، سجلات، الإعدادات، الإعلانات، المدن...) إلى ملف Excel واحد.
+2. **البحث في سجل النشاط**: مربع بحث في AuditLogPanel (بحث نصي في الإجراء والتفاصيل).
+3. **رسالة ترحيب بالحساب الفرعي**: resolveAdminTabAccess يعيد subAccountName وAdminPinGate/ترويسة اللوحة تعرض «مرحبًا بك، {اسم}» للحسابات الفرعية.
+
+### المراجعة الأمنية (منجزة)
+- **ترقية تجزئة كلمات المرور من djb2 (ضعيفة) إلى SHA-256+salt** في:
+  - lib/patient-profile.ts (hashPasswordStrong + verifyPassword + isStrongHash + ترحيل تلقائي عند الدخول + getPatientProfile يحذف الهاش القديم من الكاش)
+  - login.tsx يستخدم verifyPassword ويرقّي hash عند الدخول الناجح
+  - تطبيق الشريك: lib/provider-auth.ts (hashPassword قديم → قوي + ترحيل)
+  - lib/admin.ts: addProviderAccount (أطباء الخارج) تستخدم SHA-256
+- **مفهوم الترحيل**: hash قديم number يبقى صالحًا للتحقق، ويرقّى تلقائيًا للشكل القوي عند الدخول الناجح — لا يكسر الحسابات القديمة.
+- **مشكلة vitest المكتشفة والمصلحة**: expo-crypto/Crypto.js يعيد تصدير ./aes غير الموجود → خطأ rollup "Expected 'from', got 'typeOf'". الحل: alias في vitest.config.ts إلى tests/__mocks__/expo-crypto.ts (نسخة node:crypto حقيقية SHA-256).
+- **الاختبارات: 157 ناجحة** بعد الموك.
+
+### حالة باقي المراجعة الأمنية
+- لوحة التحكم: PIN فقط، متاحة من أي جهاز — الحماية القادمة مع الاستضافة تعتمد HTTPS + حماية المسار من الخادم (يضاف عند الاستضافة).
+- تخزين محلي (AsyncStorage) — لا يوجد خادم حاليًا؛ عند الانتقال للـ DB المشترك الأحد/الاثنين تضاف طبقة المصادقة الخادمية.

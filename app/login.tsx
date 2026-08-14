@@ -16,7 +16,7 @@ import * as Haptics from "expo-haptics";
 import { ScreenContainer } from "@/components/screen-container";
 import { TabibiBrand } from "@/components/tabibi-logo";
 import { getPatientProfile,
-  updatePatientPassword, hashPassword } from "@/lib/patient-profile";
+  updatePatientPassword, verifyPassword, updatePatientPasswordStrong } from "@/lib/patient-profile";
 
 export default function LoginScreen() {
   const [fullName, setFullName] = useState("");
@@ -49,16 +49,24 @@ export default function LoginScreen() {
       const normalizedInput = trimmedName.toLocaleLowerCase("ar");
       const normalizedSaved = profile.fullName.toLocaleLowerCase("ar");
       const nameMatches = normalizedInput === normalizedSaved;
-      const passwordMatches = profile.passwordHash !== undefined && profile.passwordHash === hashPassword(password);
+      const passwordMatches = profile.passwordHash !== undefined && await verifyPassword(profile.passwordHash, password);
 
       // الحسابات القديمة التي لم تُحفظ فيها كلمة المرور تقبل بكلمة المرور المدخلة أول مرة.
       if (nameMatches && (passwordMatches || profile.passwordHash === undefined)) {
         // حساب قديم لم تُحفظ فيه كلمة المرور: نحفظ تجزئة كلمة المرور المدخلة.
         if (profile.passwordHash === undefined) {
           try {
-            await updatePatientPassword(password);
+            await updatePatientPasswordStrong(password);
           } catch {
             // المتابعة دون حفظ الهاش لا تمنع الدخول.
+          }
+        }
+        // ترقية التجزئة الضعيفة القديمة (djb2) إلى SHA-256 مع salt عند الدخول الناجح.
+        if (profile.passwordHash !== undefined && typeof profile.passwordHash !== "string") {
+          try {
+            await updatePatientPasswordStrong(password);
+          } catch {
+            // المتابعة دون ترقية لا تمنع الدخول.
           }
         }
         if (Platform.OS !== "web") {

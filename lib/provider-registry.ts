@@ -28,7 +28,8 @@ export type ProviderAccount = {
   fullName: string;
   role: string;
   phone: string;
-  passwordHash: number;
+  /** تجزئة كلمة المرور: number للشكل القديم (djb2) أو string للشكل القوي (sha256:salt:digest) */
+  passwordHash: number | string;
   createdAt: number;
   status: "pending" | "active" | "frozen" | "cancelled";
   specializations: string[];

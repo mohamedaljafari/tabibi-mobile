@@ -239,7 +239,7 @@ export async function addProviderAccount(
   const account: ProviderAccount = {
     ...input,
     id: newId(),
-    passwordHash: hashPassword(input.password),
+    passwordHash: await hashPasswordStrong(input.password),
     documents: input.documents ?? [],
     createdAt: Date.now(),
   };
@@ -265,6 +265,17 @@ function hashPassword(password: string): number {
     hash = ((hash << 5) + hash + password.charCodeAt(index)) >>> 0;
   }
   return hash;
+}
+
+/**
+ * تجزئة تشفيرية قوية (SHA-256) مع مفتاح عشوائي (salt) لكل حساب.
+ * الشكل: "sha256:{salt-hex}:{hex-digest}"
+ */
+async function hashPasswordStrong(password: string, salt?: string): Promise<string> {
+  const { getRandomBytesAsync, digestStringAsync, CryptoDigestAlgorithm, CryptoEncoding } = await import("expo-crypto");
+  const saltHex = salt ?? Array.from(await getRandomBytesAsync(16)).map((byte: number) => byte.toString(16).padStart(2, "0")).join("");
+  const digestHex = await digestStringAsync(CryptoDigestAlgorithm.SHA256, `${saltHex}:${password}`, { encoding: CryptoEncoding.HEX });
+  return `sha256:${saltHex}:${digestHex}`;
 }
 
 // ───────────────────── الطلبات ─────────────────────

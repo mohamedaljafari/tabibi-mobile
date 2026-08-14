@@ -161,3 +161,79 @@ export async function exportWalletLedgerToExcel(entries: WalletLedgerExportEntry
 
   return downloadWorkbook(workbook, `المحفظة_${title}_${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
+
+// ══════════════════════ نسخة احتياطية شاملة (JSON) ══════════════════════
+
+/**
+ * مفاتيح التخزين التي تُجمَّع في النسخة الاحتياطية الشاملة.
+ * كل المفاتيح الموصوفة هنا هي المصدر الوحيد لبيانات المنصة حاليًا (AsyncStorage/LocalStorage).
+ */
+const FULL_BACKUP_KEYS = [
+  // اللوحة: الإعلانات، كاتالوج الخدمات، مقدمو الخدمة، سجل النشاط، الإعدادات، صلاحيات الإدارة، الإشعارات
+  "admin_ads_v1",
+  "services_catalog_v1",
+  "provider_accounts_v1",
+  "admin_audit_log_v1",
+  "platform_settings_v1",
+  "admin_sub_pins_v1",
+  "app_notifications_v1",
+  // المريض: البروفايل، العناوين، أفراد العائلة، الطلبات، الاستشارات، الدردشة، التقييمات، المحفظة، الوصول الطبي، المدن، اقتراحات المدن
+  "patient_profile_v1",
+  "patient_addresses_v1",
+  "family_members_v1",
+  "medical_access_grants_v1",
+  "service_requests_v1",
+  "consultation_requests_v1",
+  "chat_threads_v1",
+  "chat_messages_v1",
+  "request_ratings_v1",
+  "wallet_ledger_v1",
+  "patient_registry_v1",
+  "libya_cities_v1",
+  "city_suggestions_v1",
+  "external_doctors_v1",
+  "international_doctors_v1",
+  // الشريك: الجلسة
+  "provider_session_v1",
+] as const;
+
+/**
+ * تجميع كل بيانات المنصة من التخزين المحلي وتنزيلها كملف JSON واحد.
+ * الملف يحتوي بيانات كل مقدمي الخدمة والمرضى والطلبات والمحفظات والإعدادات —
+ * وهو الأداة الأساسية للنسخ الاحتياطي قبل الانتقال إلى الاستضافة المشتركة.
+ */
+export async function exportFullBackup(): Promise<boolean> {
+  try {
+    const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
+    const collected: Record<string, unknown> = {};
+    for (const key of FULL_BACKUP_KEYS) {
+      const raw = await AsyncStorage.getItem(key).catch(() => null);
+      if (raw !== null) {
+        try {
+          collected[key] = JSON.parse(raw);
+        } catch {
+          collected[key] = raw;
+        }
+      }
+    }
+    const backup = {
+      app: "tabibi-platform",
+      exportedAt: new Date().toISOString(),
+      exportedAtLocal: new Date().toLocaleString("ar-LY"),
+      data: collected,
+    };
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `نسخة_طبيبي_احتياطية_${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
+    return true;
+  } catch (error) {
+    console.warn("فشل تجهيز النسخة الاحتياطية الشاملة", error);
+    return false;
+  }
+}

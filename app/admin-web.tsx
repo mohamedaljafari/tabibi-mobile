@@ -78,7 +78,7 @@ import {
   type Notification,
   type NotificationChannel,
 } from "@/lib/notifications";
-import { readAuditLog, type AuditLogEntry } from "@/lib/admin-audit-log";
+import { logAdminAction, readAuditLog, type AuditLogEntry } from "@/lib/admin-audit-log";
 import {
   providerShareAfterCommission,
   readPlatformSettings,
@@ -87,6 +87,7 @@ import {
 } from "@/lib/platform-settings";
 import {
   exportAuditLogToExcel,
+  exportFullBackup,
   exportMonthlyReportToExcel,
 } from "@/lib/admin-export";
 import {
@@ -115,7 +116,7 @@ function useRefreshToken() {
 }
 
 // ══════════════════════ شاشة الدخول ══════════════════════
-function AdminPinGate({ onAuth }: { onAuth: (allowedTabs: AdminTabId[]) => void }) {
+function AdminPinGate({ onAuth }: { onAuth: (access: { tabs: AdminTabId[]; subAccountName: string }) => void }) {
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -124,15 +125,15 @@ function AdminPinGate({ onAuth }: { onAuth: (allowedTabs: AdminTabId[]) => void 
     if (!pin.trim()) return setError("أدخل الرمز أولًا");
     if (isValidAdminPin(pin)) {
       setError("");
-      onAuth(ALL_ADMIN_TABS.map((item) => item.id));
+      onAuth({ tabs: ALL_ADMIN_TABS.map((item) => item.id), subAccountName: "" });
       return;
     }
     setLoading(true);
     try {
-      const allowed = await resolveAdminTabAccess(pin, ALL_ADMIN_TABS.map((item) => item.id));
-      if (allowed.length > 0) {
+      const access = await resolveAdminTabAccess(pin, ALL_ADMIN_TABS.map((item) => item.id));
+      if (access.tabs.length > 0) {
         setError("");
-        onAuth(allowed);
+        onAuth(access);
       } else {
         setError("الرمز غير صحيح، حاول مرة أخرى.");
       }
@@ -231,6 +232,7 @@ const ALL_TABS_LIST: { id: AdminTabId; title: string; icon: string }[] = [
 export default function AdminWebScreen() {
   const [authenticated, setAuthenticated] = useState(false);
   const [allowedTabs, setAllowedTabs] = useState<AdminTabId[]>(ALL_ADMIN_TABS.map((item) => item.id));
+  const [subAccountName, setSubAccountName] = useState("");
   const [tab, setTab] = useState<AdminTabId>("summary");
   const { token, refresh } = useRefreshToken();
 
@@ -238,7 +240,7 @@ export default function AdminWebScreen() {
     return (
       <>
         <style>{sharedCss}</style>
-        <AdminPinGate onAuth={(tabs) => setAllowedTabs(tabs)} />
+        <AdminPinGate onAuth={(access) => { setAllowedTabs(access.tabs); setSubAccountName(access.subAccountName); setAuthenticated(true); }} />
       </>
     );
   }
@@ -254,6 +256,9 @@ export default function AdminWebScreen() {
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <span style={{ fontSize: 22 }}>🛡️</span>
             <span style={{ fontSize: 18, fontWeight: 700, color: "#3A3A3A" }}>لوحة تحكم طبيبي</span>
+            {subAccountName ? (
+              <span style={{ fontSize: 12, background: "#F0EBDF", color: OLIVE, fontWeight: 700, padding: "4px 12px", borderRadius: 20, border: "1px solid #E2D9C5" }}>مرحبًا بك، {subAccountName}</span>
+            ) : null}
           </div>
             <button
               onClick={() => {
@@ -1690,6 +1695,20 @@ function MonthlyReportPanel({ onRefresh }: { onRefresh: () => void }) {
     void success;
   };
 
+  const [backupProgress, setBackupProgress] = useState("");
+  const handleBackup = async () => {
+    setBackupProgress("جارٍ تجميع البيانات للنسخة الاحتياطية…");
+    try {
+      await exportFullBackup();
+      setBackupProgress("تم تحميل النسخة الاحتياطية بنجاح — احفظها في مكان آمن.");
+      await logAdminAction({ action: "نسخة احتياطية كاملة", details: "تحميل نسخة احتياطية لكل بيانات المنصة (JSON)" });
+    } catch {
+      setBackupProgress("حدث خطأ أثناء تجهيز النسخة الاحتياطية. حاول مرة أخرى.");
+    } finally {
+      setTimeout(() => setBackupProgress(""), 6000);
+    }
+  };
+
   useEffect(() => {
     load(selectedMonth);
   }, [selectedMonth, load]);
@@ -1716,7 +1735,11 @@ function MonthlyReportPanel({ onRefresh }: { onRefresh: () => void }) {
             ))}
           </select>
           <button style={secondaryButtonStyle} onClick={() => void handleExport()}>📊 تصدير Excel</button>
+          <button style={secondaryButtonStyle} onClick={() => void handleBackup()}>💾 نسخة احتياطية كاملة</button>
         </div>
+        {backupProgress ? (
+          <div style={{ marginBottom: 10, fontSize: 13, fontWeight: 600, color: OLIVE, textAlign: "center" }}>{backupProgress}</div>
+        ) : null}
         {loading ? (
           <div style={{ textAlign: "center", color: "#8A8278", padding: 20 }}>جارٍ تجميع البيانات…</div>
         ) : !report ? (
@@ -2059,6 +2082,11 @@ function AuditLogPanel({ onRefresh }: { onRefresh: () => void }) {
   void onRefresh;
   void load;
 
+  const [searchText, setSearchText] = useState("");
+  const filteredEntries = searchText.trim() === ""
+    ? entries
+    : entries.filter((entry) => (entry.action + " " + (entry.details || "")).includes(searchText.trim()));
+
   const handleExport = async () => {
     await exportAuditLogToExcel(entries.map((entry) => ({ id: entry.id, action: entry.action, details: entry.details, createdAt: entry.createdAt })));
   };
@@ -2068,8 +2096,15 @@ function AuditLogPanel({ onRefresh }: { onRefresh: () => void }) {
   return (
     <div style={{ display: "grid", gap: 20 }}>
       <Card title="سجل نشاط الإدارة" note="كل إجراء يدوي تنفذه الإدارة يُسجَّل هنا تلقائيًا مع التاريخ والوقت للتتبع والمساءلة">
-        <div style={{ marginBottom: 12 }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>
           <button style={secondaryButtonStyle} onClick={() => void handleExport()} disabled={entries.length === 0}>📊 تصدير Excel</button>
+          <input
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            placeholder="🔍 ابحث في السجل (الإجراء أو التفاصيل)…"
+            style={{ ...inputStyle, flex: 1, maxWidth: 360 }}
+          />
+          {searchText ? <span style={{ fontSize: 12, color: "#8A8278" }}>{filteredEntries.length} نتيجة</span> : null}
         </div>
         {loading ? (
           <div style={{ textAlign: "center", color: "#8A8278", padding: 20 }}>جارٍ تحميل السجل…</div>

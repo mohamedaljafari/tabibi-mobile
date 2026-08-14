@@ -66,7 +66,8 @@ export type PatientProfile = {
   medicalRecords: MedicalRecord[];
   isSetupComplete: boolean;
   /** تجزئة كلمة المرور (تُحفظ عند إنشاء الحساب) */
-  passwordHash?: number;
+  /** تجزئة كلمة المرور: number للشكل القديم (djb2) أو string للشكل القوي (SHA-256) */
+  passwordHash?: number | string;
 };
 
 export type RegistrationInput = {
@@ -121,6 +122,31 @@ export function hashPassword(password: string): number {
   return hash;
 }
 
+/**
+ * تجزئة تشفيرية قوية (SHA-256) مع مفتاح عشوائي (salt) لكل حساب.
+ * تحل محل الدالة الضعيفة القديمة (djb2) التي تعيد number وتعرض للتصادم.
+ * الشكل: "sha256:{salt-hex}:{hex-digest}"
+ */
+export async function hashPasswordStrong(password: string, salt?: string): Promise<string> {
+  const { getRandomBytesAsync, digestStringAsync, CryptoDigestAlgorithm, CryptoEncoding } = await import("expo-crypto");
+  const saltHex = salt ?? Array.from(await getRandomBytesAsync(16)).map((byte: number) => byte.toString(16).padStart(2, "0")).join("");
+  const digestHex = await digestStringAsync(CryptoDigestAlgorithm.SHA256, `${saltHex}:${password}`, { encoding: CryptoEncoding.HEX });
+  return `sha256:${saltHex}:${digestHex}`;
+}
+
+export function isStrongHash(value: unknown): value is string {
+  return typeof value === "string" && /^sha256:[0-9a-f]{32}:/.test(value);
+}
+
+/** التحقق من كلمة المرور: يقبل الشكل القوي الجديد والشكل القديم للترحيل التدريجي */
+export async function verifyPassword(stored: unknown, password: string): Promise<boolean> {
+  if (isStrongHash(stored)) {
+    const [, saltHex] = stored.split(":");
+    return (await hashPasswordStrong(password, saltHex)) === stored;
+  }
+  return typeof stored === "number" && stored === hashPassword(password);
+}
+
 export async function savePatientProfile(input: RegistrationInput): Promise<PatientProfile> {
   const profile: PatientProfile = {
     fullName: input.fullName.trim(),
@@ -129,7 +155,7 @@ export async function savePatientProfile(input: RegistrationInput): Promise<Pati
     addresses: [],
     medicalRecords: [],
     isSetupComplete: false,
-    passwordHash: hashPassword(input.password),
+    passwordHash: await hashPasswordStrong(input.password),
   };
   await AsyncStorage.setItem(PATIENT_PROFILE_KEY, JSON.stringify(profile));
   return profile;
@@ -179,6 +205,17 @@ export async function updatePatientPassword(password: string): Promise<PatientPr
   const current = await getPatientProfile();
   if (!current) throw new Error("لا يوجد حساب مسجل في هذا التطبيق");
   const profile: PatientProfile = { ...current, passwordHash: hashPassword(password) };
+  return persistProfile(profile);
+}
+
+/**
+ * تحديث كلمة المرور بالتجزئة القوية (SHA-256 + salt).
+ * تُستخدم للحسابات الجديدة وترقية الحسابات القديمة عند الدخول الناجح.
+ */
+export async function updatePatientPasswordStrong(password: string): Promise<PatientProfile> {
+  const current = await getPatientProfile();
+  if (!current) throw new Error("لا يوجد حساب مسجل في هذا التطبيق");
+  const profile: PatientProfile = { ...current, passwordHash: await hashPasswordStrong(password) };
   return persistProfile(profile);
 }
 

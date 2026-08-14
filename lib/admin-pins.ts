@@ -137,13 +137,19 @@ export function removeAdminPin(id: string): Promise<boolean> {
   })();
 }
 
+export type AdminTabAccess = {
+  tabs: AdminTabId[];
+  /** اسم الحساب الفرعي أو فارغ إذا كان الدخول بالرمز الرئيسي للمالك */
+  subAccountName: string;
+};
+
 /** التحقق من صلاحية الرمز وإرجاع التبويبات المسموح بها (الرمز الرئيسي يتمتع بكل الصلاحيات) */
-export async function resolveAdminTabAccess(pin: string | undefined | null, allTabIds: AdminTabId[]): Promise<AdminTabId[]> {
-  if (!pin || !pin.trim()) return [];
+export async function resolveAdminTabAccess(pin: string | undefined | null, allTabIds: AdminTabId[]): Promise<AdminTabAccess> {
+  if (!pin || !pin.trim()) return { tabs: [], subAccountName: "" };
   const { isValidAdminPin } = await import("./admin-auth");
-  if (isValidAdminPin(pin)) return allTabIds;
+  if (isValidAdminPin(pin)) return { tabs: allTabIds, subAccountName: "" };
   const permissions = await readPermissions();
   const match = permissions.pins.find((entry) => entry.enabled && entry.pin === pin.trim());
-  if (!match) return [];
-  return match.allowedTabs.filter((tabId) => allTabIds.includes(tabId));
+  if (!match) return { tabs: [], subAccountName: "" };
+  return { tabs: match.allowedTabs.filter((tabId) => allTabIds.includes(tabId)), subAccountName: match.name };
 }
