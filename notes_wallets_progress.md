@@ -317,3 +317,18 @@ GH_TOKEN (تكامل Manus-GitHub) يستطيع رؤية المستودعين (N
 1. دفع كل الكود ما عدا .github/workflows عبر git (نجح سابقًا؟ لا — كل الرفع فشل سابقًا). الأفضل: دفع الكود بدون .github، ثم رفع workflow يدويًا عبر gh api أو إنشاء workflow عبر واجهة GitHub API التي قد تسمح بها GH_TOKEN (التكامل لديه workflows: read عادة).
 2. البديل الأسهل الموثوق: تفعيل Actions عبر gh workflow أو رفع الملف عبر gh api createOrUpdateFileContents (App قد يرفضها أيضًا — gh actions لا تُدار عادة عبر Apps بدون permission).
 الخطة: دفع الكود بدون workflow أولًا، ثم محاولة gh api لرفع workflow. إن رفض التكامل صراحة إنشاء workflow، ننبّه المستخدم إلى خطوة يدوية واحدة في إعدادات Actions (Allow GitHub Actions) أو نستخدم GITHUB_PAT بعد منحه Content R/W للمستودعين.
+
+
+### نجاح الدفع الأول + الخطوة التالية (03:06)
+- رُفع الكود كاملًا للمستودعين: tabibi-mobile (ff56774) وtabibi-partner (05b4e7c) — SUCCESS
+- ملفات .github/workflows/ci.yml حُذفت من الدفع لأن GH_TOKEN (App) يرفض إنشاء workflow files (يتطلب workflow permission غير مفعّلة للتكامل)
+- الخيارات المتبقية لإكمال "الرفع التلقائي": (أ) gh actions enable + gh api workflow upload (App يرفضها أيضًا — مجرّبة 403)، (ب) طلب PAT كلاسيكي repo، (ج) إبقاء README + Releases فقط وإبلاغ المستخدم.
+- ملف ci.yml المريض الأصلي: كان في /tmp/ci.yml.bak ثم حُذف — يجب إعادة إنشائه في المريض (الـ template موجود أعلاه) ونسخه للشريك مع تعديل العنوان فقط.
+- GITHUB_PAT (من المستخدم) = Fine-grained مقيّد بـ5 مستودعات قديمة فقط، لا يشمل tabibi-* → غير صالح هنا؛ PAT يحتاج تعديل Repository access (طلبنا ذلك سابقًا) — إن عدّل المستخدم وطلب التجربة، جرب: git remote set-url github "https://x-access-token:$GITHUB_PAT@github.com/..." ثم push.
+- المستودعات: https://github.com/mohamedaljafari/tabibi-mobile و /tabibi-partner (خاصة)
+
+
+### تشخيص workflow (متابعة)
+رفع ci.yml عبر gh api (JSON) رُفض بـ 403 Resource not accessible: تكامل manus-connector لديه Contents: R/W لكنه محظور صراحة من touching workflow files بدون workflows permission. gh api app يعيد 401 (لا JWT). الخيارات المتبقية: (1) دفع ci.yml كنص عادي عبر remote مع git (git push يرفض workflow files أيضًا — مجرّب سابقًا برسالة "refusing to allow a GitHub App to create or update workflow")، (2) استخدام GITHUB_PAT بعد أن يعدّل المستخدم وصول المستودعات في التوكن (طلبنا ذلك)، (3) التسليم بدون workflow تلقائي مع README + Releases.
+القرار: نجرب أخيرًا دفع ci.yml عبر git بـ GH_TOKEN مباشرة مع --allow-empty? لا — الحل الوحيد الموثوق الآن: PAT بـ repo scope (يتطلب تعديلًا من المستخدم). بديل ذكي: commit-push عبر gh في مستودع فارغ؟ لا.
+متبقي للمرحلة: README عربي للمستودعين + APK releases + تسليم.
