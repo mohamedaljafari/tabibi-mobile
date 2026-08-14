@@ -11,12 +11,24 @@
  */
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+export type ChatAttachment = {
+  /** "image" أو "file" (PDF وغيرها) */
+  kind: "image" | "file";
+  fileName: string;
+  /** نوع الملف مثل image/jpeg أو application/pdf */
+  mimeType: string;
+  /** مسار الملف المحلي على الجهاز */
+  uri: string;
+};
+
 export type ChatMessage = {
   id: string;
   threadId: string;
   /** "patient" أو "provider" */
   senderRole: "patient" | "provider";
   text: string;
+  /** مرفق (صورة أو تقرير طبي PDF) إن وجد */
+  attachment?: ChatAttachment;
   createdAt: number;
 };
 
@@ -134,6 +146,29 @@ export async function sendMessage(
     threadId,
     senderRole,
     text: trimmed,
+    createdAt: Date.now(),
+  };
+  const messages = await readJson<ChatMessage[]>(CHAT_MESSAGES_KEY, true);
+  await writeJson(CHAT_MESSAGES_KEY, [...messages, message]);
+  return message;
+}
+
+/** إرسال رسالة مرفق (صورة أو تقرير طبي) مع نص اختياري في محادثة */
+export async function sendAttachmentMessage(
+  threadId: string,
+  senderRole: "patient" | "provider",
+  attachment: ChatAttachment,
+  text?: string,
+): Promise<ChatMessage | null> {
+  const thread = await findThread(threadId);
+  if (!thread) return null;
+  if (!attachment.uri) return null;
+  const message: ChatMessage = {
+    id: genId("msg"),
+    threadId,
+    senderRole,
+    text: (text ?? "").trim(),
+    attachment,
     createdAt: Date.now(),
   };
   const messages = await readJson<ChatMessage[]>(CHAT_MESSAGES_KEY, true);

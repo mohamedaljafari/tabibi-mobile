@@ -240,3 +240,57 @@ provider-services.ts: ProviderService{id,name,price,number?,durationMinutes?:} (
 - todo.md للشريك محدّث بالكامل.
 - dev server الشريك على 8082 يعمل.
 - المتبقي: (1) توليد شعار "طبيب شريك" (سماعة طبية، زيتوني #6B7B3F، ذهبي #C9A961، خلفية كريمية، مربع ممتلئ)، (2) تحديث app.config.ts: appName="طبيب شريك"، bundleId جديد، logoUrl، (3) نسخ الشعار: assets/images/icon.png + splash-icon.png + favicon.png + android-icon-foreground.png، (4) حفظ checkpoint لتطبيق المريض e18689d0 + zip لتطبيق الشريك وتسليمهما.
+
+
+## مرحلة: مرفقات الدردشة (صور وتقارير طبية PDF) — 14 أغسطس
+الخطة المتفق عليها مع المستخدم: إضافة إرسال الصور والتقارير الطبية PDF داخل الدردشة للطرفين.
+معلومات مفيدة من الفحص:
+- chat.ts في المريض (lib/chat.ts): ChatMessage نصي فقط {id,threadId,senderRole,text,createdAt}. sendMessage(threadId, senderRole, text) يعيد null عند نص فارغ. المفاتيح: provider_chat_threads_v1 + provider_chat_messages_v1. الشريك يحتوي نسخة مطابقة من lib/chat.ts.
+- chat.screen للمريض: app/chat.tsx (معاملات: requestId, providerName). للشريك: app/chat.tsx (معامل: id) + hintBar ذهبي.
+- pattern موجود مسبقًا في app/pharmacy-quote.tsx: pickPrescription (DocumentPicker.getDocumentAsync({type:["application/pdf","image/*"], copyToCacheDirectory:true})) + ImagePicker.launchImageLibraryAsync/launchCameraAsync، مع عرض PDF rows (السطور 101-113) وpreview صور.
+- expo-image-picker وexpo-document-picker مثبتتان في تطبيق الشريك (مريض: موجودة أيضًا).
+- doc module: /home/ubuntu/tabibi-mobile_helper/docs/media/imagepicker/DOCS.md — pick: launchImageLibraryAsync({mediaTypes: All})، result.assets[0].uri؛ لا يلزم إذن للمكتبة.
+- الاختبارات: /home/ubuntu/tabibi-mobile/tests/chat.test.ts و /home/ubuntu/tabibi-partner/tests/chat.test.ts (نفس المحتوى تقريبًا: thread create/find/filter، sendMessage trims/reject empty).
+- تصميم الرسالة: فقاعات bubble: المريض myBubble="#6B7B3F" نص أبيض، شريك provider bubble="#6B7B3F"، bubblePatient="#FFFDF8" بحد. ألوان عامة: #6B7B3F زيتوني، #C9A961 ذهبي، #F8F5ED/#FFFDF8 خلفيات، #E8E0D1/#E4DCCB حدود، نص #465132/#1F2414، وقت #A89F8C.
+- التنفيذ المخطط: إضافة attachment اختياري {fileName, uri, mimeType, kind:"image"|"file"} في ChatMessage مع مسمى sendMessage2 أو توسيع sendMessage — **القرار: توسيع ChatMessage بحقل اختياري attachment وإضافة sendAttachmentMessage(threadId, role, attachment, text?) في chat.ts للمشروعين (نسخة واحدة لكل مشروع)**. UI: زر + بجانب الإرسال يفتح Alert (الويب لا يدعم AlertNative — استخدم قائمة مخصصة أو alert بسيط). على الويب: Image.show للصور، رابط لـPDF.
+- حالة المريض chat.tsx: inputBar row-reverse (RTL) مع TextInput + sendButton. الشريك: input bar عادي (flex-row) + sendButton.
+- المريض sendMessage يستخدم getPatientProfile فقط كتعريف، send مع "patient". الشريك مع "provider" وgetSessionAccount.
+- اختبارات المريض 152 والشريك 26 — يجب أن تبقى خضراء. checkpoint المريض الأخير: 13f7cdee.
+- بعد التنفيذ: إضافة اختبارات attachment لكلا chat.test.ts، تحديث todo.md (بُند المرحلة أُضيف)، checkpoint للمريض + إعادة zip للشريك + تسليم.
+
+
+## حالة ميزة مرفقات الدردشة (14 أغسطس ~00:18)
+- المنجز: توسيع chat.ts (نوع ChatAttachment {kind, fileName, mimeType, uri} وحقل attachment اختياري + sendAttachmentMessage) في المريض والشريك (متطابقان). مكون مشترك components/chat-attachment-bar.tsx في المشروعين (AttachmentPickerButton + AttachmentPreview + MessageAttachmentCard مع معاينة صورة حقيقية). شاشة الدردشة في المريض (app/chat.tsx) والشريك (app/chat.tsx) تدمجان الزر والمعاينة والفقاعات المرفقة.
+- شريط الدردشة للشريك: يقرأ messages عبر useInterval(refresh,4000) لكن handleSend يضيف الرسالة محليًا — صحيح.
+- اختبارات: المريض 157 والشريك 31 (شملت 5 اختبارات مرفقات جديدة — copied to partner). TypeScript نظيف في المشروعين.
+- التحقق البصري للشريك (منفذ 8082، chat?id=req_att_demo): فقاعات PDF والنص تظهر سليمة. **مشكلة متبقية**: بطاقة الصورة تظهر كمنطقة بيضاء — على الويب استخدمت require("react-native").Image في ImagePreview لكن المعاينة تظهر بيضاء. لا يوجد خطأ في الكونسول. السبب المحتمل: Image من react-native-web يحتاج style object صالح — يعمل عادة. البطاقة البيضاء 210x150 تعني أن الصورة لا تُحمّل (onError ربما لم يطلق أو الصورة خارجية HTTPS تعمل). سبب مرجح: require("react-native").Image في expo-router web قد يكون react-native-web Image — ربما URI https://picsum.photos يعمل لكن الـ view أبيض لأن background أبيض. يجب فحص DOM أو تجربة مع صورة أخرى.
+- المتبقي: إصلاح معاينة الصورة، فحص chat في تطبيق المريض بصريًا عبر موقعه dev (8081)، تحديث todo.md (بند المرحلة في نهاية todo.md للشريك — أُنشئ سابقًا)، checkpoint المريض، rezip الشريك، تسليم.
+- الشريك dev server يعمل: EXPO_PORT=8082, log /tmp/partner-dev.log. المريض dev server على 8081.
+- زر الإرفاق يظهر في شريط إدخال الشريك والمريض (أيقونة attach-file زيتونية). على الويب Alert لا يعمل -> fallback pickChatImage فقط (مكتبة صور).
+
+
+### نتيجة التحقق البصري النهائي للشريك (00:19)
+معاينة الصورة تعمل الآن (صورة حقيقية داخل البطاقة الزيتونية مع اسم الملف)، فقاعة PDF تظهر بأيقونة ووصف "تقرير طبي / ملف"، فقاعة النصية سليمة، وزر الإرفاق يظهر في شريط الإدخال. المتبقي: فحص مشابه في تطبيق المريض (8081)، تحديث todo.md (بند المرفقات في نهاية todo.md للشريك والمريض)، حفظ checkpoints في المشروعين، rezip الشريك، التسليم.
+
+
+### سبب تعليق شاشة الدردشة للمريض (00:20)
+app/chat.tsx في المريض (سطور 55-83) يستدعي findRequestForThread(requestId) ثم يشترط request.status === "accepted" أو "completed" — وإلا يظل blocked (loading=true في الحالتين؟ لا، setBlocked + setLoading(false)). المشكلة الفعلية: الطلب المزروع req_att_demo غير موجود في service_requests_v1 (لم يُنشأ أصلًا عند الزرع) أو أن findRequestForThread يقرأ من تخزين مختلف. البيانات مزروعة الآن: threads=1, msgs=2، لكن الطلب يجب أن يوجد بـ id=req_att_demo وstatus=accepted وpatientId=pat_demo. فحص findRequestForThread في المريض لمعرفة المفتاح والمطابقة، ثم إعادة الزرع الصحيح. زرعة الطلب: { id: "req_att_demo", status: "accepted", patientId: "pat_demo", providerId: "prov_demo", providerName: "د. سارة", services: [{name:"كشف منزلي", price:50}], createdAt: Date.now(), paymentMethod: "cash", paymentStatus: "payment_pending" }.
+
+
+### تحليل تعليق شاشة الدردشة (00:21)
+جميع البيانات صحيحة (profile fullName=أحمد، req status=accepted، thread موجود). لكن الشاشة تعلق على مؤشر التحميل ولا تظهر blocked أيضًا → useEffect في سطر ~57 يعمل لكن ربما setProfile/readPatientRequests لا تجد — لا، blocked=true يجب أن يظهر إذا allowed=false، لكن blocked يبقى false وloading يبقى true → يعني useEffect لم يُنفَّذ أصلًا أو requestId undefined! useLocalSearchParams على الويب مع ?id= قد تعيد requestId غير معرف لأن المكون يستخدم param باسم "requestId" لكن URL يستخدم "id". الشاشة تفتح بـ ?id= بينما الكود يتوقع useLocalSearchParams<{requestId}> → requestId===undefined → useEffect لا يعمل (if !requestId return) → loading يبقى true للأبد. الحل: تمرير ?requestId=... بدل ?id=، أو فتح /chat?requestId=req_att_demo. (نفس المنطق في الشريك: /chat?id= يجب فحصها.)
+
+
+### نتيجة التحقق البصري للمريض (00:22) — ناجح
+شاشة الدردشة للمريض تعمل بالمرفقات: فقاعة نصية من الشريك (يسار)، صورة "تحليل_دم.jpg" تظهر فعليًا داخل بطاقة زيتونية (يمين)، شريط الإدخال فيه زر الإرفاق (📎) والإرسال، الهيدر يعرض "د. سارة — محادثة حول طلب الخدمة". التنبيه: فتح الدردشة يتطلب معامل ?requestId= وليس ?id= (useLocalSearchParams). المرفقة PDF لم تظهر لأنها مزروعة بمفتاح msgs القديم؟ لا — msgs المزروعة كانت m1 (نص provider) + m2 (صورة patient)، والصورة ظاهرت. يكفي.
+المتبقي: 1) فحص شاشة الدردشة للشريك بنفس المعامل ?requestId= (كانت تُفتح بـ ?id= — قد تكون مشكلة مشابهة، فحص useLocalSearchParams في /home/ubuntu/tabibi-partner/app/chat.tsx). 2) اختبار إرسال مرفق عبر UI (إن أمكن) أو الاكتفاء بالاختبارات الآلية. 3) تحديث todo.md (بند المرفقات: الشريك والمريض). 4) pnpm test للمشروعين. 5) checkpoints للمشروعين + rezip الشريك. 6) التسليم.
+
+
+### نتيجة التحقق البصري للشريك (00:22) — ناجح
+شاشة الدردشة للشريك تعمل بالمرفقات: فقاعة صورة "تحليل_دم.jpg" تظهر داخل بطاقة مع اسم الملف، فقاعة نصية من المريض (يسار، زيتوني)، شريط الإدخال مع زر إرفاق 📎 وزر إرسال. ملاحظة تحسين: الهيدر لا يعرض اسم المريض (فقط "محادثة") — تحسين بسيط اختياري. كل شيء يعمل.
+المتبقي: todo.md (كلا المشروعين) + pnpm test للمشروعين + checkpoints + rezip الشريك + التسليم.
+
+
+### تحسين هيدر دردشة الشريك (00:24)
+اكتشفت أن الهيدر كان يعرض "محادثة" لأن isRequestForProvider ترفض أي طلب بلا addressLabel (string) — والطلب المزروع لم يكن يحويه. بعد إضافة addressLabel/Details أعيد التحميل ويجب أن يظهر اسم المريض في الهيدر. هذا سلوك تحقق صحيح (ليس خللًا). الهيدر نفسه يقرأ request?.patientName افتراضيًا (صحيح).
+المتبقي: التحقق البصري الأخير، تحديث todo.md بالمرحلة، pnpm test للمشروعين، checkpoints (مريض + شريك)، إعادة zip الشريك، التسليم.

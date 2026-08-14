@@ -24,7 +24,12 @@ import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 
 import { ScreenContainer } from "@/components/screen-container";
-import { findThread, readMessages, sendMessage, type ChatMessage } from "@/lib/chat";
+import {
+  AttachmentPickerButton,
+  AttachmentPreview,
+  MessageAttachmentCard,
+} from "@/components/chat-attachment-bar";
+import { findThread, readMessages, sendAttachmentMessage, sendMessage, type ChatAttachment, type ChatMessage } from "@/lib/chat";
 import { getPatientProfile } from "@/lib/patient-profile";
 import { readPatientRequests, type ServiceRequest } from "@/lib/service-requests";
 
@@ -44,6 +49,7 @@ export default function ChatScreen() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [text, setText] = useState("");
+  const [pendingAttachment, setPendingAttachment] = useState<ChatAttachment | null>(null);
 
   useEffect(() => {
     navigation.setOptions({
@@ -96,9 +102,18 @@ export default function ChatScreen() {
   }, [refreshMessages]);
 
   const submitMessage = async () => {
-    if (!threadId || !text.trim()) return;
-    const profile = await getPatientProfile();
-    void profile;
+    if (!threadId) return;
+    if (pendingAttachment) {
+      const sent = await sendAttachmentMessage(threadId, "patient", pendingAttachment, text);
+      setPendingAttachment(null);
+      setText("");
+      if (sent && Platform.OS !== "web") {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+      refreshMessages();
+      return;
+    }
+    if (!text.trim()) return;
     const sent = await sendMessage(threadId, "patient", text);
     setText("");
     if (sent && Platform.OS !== "web") {
@@ -107,14 +122,26 @@ export default function ChatScreen() {
     refreshMessages();
   };
 
+  const handleAttachmentPicked = (attachment: ChatAttachment) => {
+    setPendingAttachment(attachment);
+    if (Platform.OS !== "web") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+  };
+
   const renderMessage = ({ item }: { item: ChatMessage }) => {
     const isMine = item.senderRole === "patient";
+    const hasContent = item.attachment || item.text.length > 0;
+    if (!hasContent) return null;
     return (
       <View style={[styles.bubbleRow, isMine ? styles.myBubbleRow : styles.theirBubbleRow]}>
         <View style={[styles.bubble, isMine ? styles.myBubble : styles.theirBubble]}>
-          <Text style={[styles.bubbleText, isMine ? styles.myBubbleText : styles.theirBubbleText]}>
-            {item.text}
-          </Text>
+          {item.attachment ? <MessageAttachmentCard attachment={item.attachment} /> : null}
+          {item.text ? (
+            <Text style={[styles.bubbleText, isMine ? styles.myBubbleText : styles.theirBubbleText]}>
+              {item.text}
+            </Text>
+          ) : null}
           <Text style={[styles.timeText, isMine ? styles.myTimeText : styles.theirTimeText]}>
             {formatTime(item.createdAt)}
           </Text>
@@ -192,12 +219,17 @@ export default function ChatScreen() {
           inverted={false}
         />
 
+        {pendingAttachment ? (
+          <AttachmentPreview attachment={pendingAttachment} onRemove={() => setPendingAttachment(null)} />
+        ) : null}
+
         <View style={styles.inputBar}>
+          <AttachmentPickerButton onPicked={handleAttachmentPicked} />
           <TextInput
             style={styles.input}
             value={text}
             onChangeText={setText}
-            placeholder="اكتب رسالتك..."
+            placeholder={pendingAttachment ? "أضف وصفًا اختياريًا (اختياري)..." : "اكتب رسالتك..."}
             placeholderTextColor="#B9AFA0"
             returnKeyType="send"
             onSubmitEditing={submitMessage}
@@ -206,13 +238,13 @@ export default function ChatScreen() {
           <Pressable
             style={({ pressed }) => [
               styles.sendButton,
-              !text.trim() && styles.sendDisabled,
+              (!text.trim() && !pendingAttachment) && styles.sendDisabled,
               pressed && { opacity: 0.75 },
             ]}
             onPress={submitMessage}
             hitSlop={MESSAGE_WINDOW}
           >
-            <MaterialIcons name="send" size={20} color={text.trim() ? "#FFFDF8" : "#B9AFA0"} />
+            <MaterialIcons name="send" size={20} color={text.trim() || pendingAttachment ? "#FFFDF8" : "#B9AFA0"} />
           </Pressable>
         </View>
       </KeyboardAvoidingView>
