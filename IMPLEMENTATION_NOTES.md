@@ -438,3 +438,50 @@ todo.md يحتوي قسم «مرحلة: التحكم اليدوي الكامل �
 
 متبقي: pnpm test (ADMIN_PIN=123456pnpm run test) ثم نقطة تحقق وتسليم للمستخدم مع شرح استخدام تطبيق الشريك ولوحة التحكم.
 - نقطة التحقق السابقة: c191989f.
+
+## تحديث: تصدير Excel + قسم الصلاحيات (08:58)
+
+طلب المستخدم 14 أغسطس: إشعارات الإنترنت (push حقيقي) يُؤجَّل للاجتماع القادم لأنه يحتاج استضافة/اشتراك خارجي. المطلوب الآن: تصدير Excel (تم اعتماده) + قسم صلاحيات الإدارة.
+
+الحالة:
+- تم تثبيت exceljs (pnpm add exceljs).
+- كُتب lib/admin-export.ts: exportMonthlyReportToExcel (بيانات MonthlyReportExportData: monthLabel, completedServices, completedConsultations, grossRevenue, platformCommission, providersShare, commissionPercent, topProviders, completedEntries) + exportAuditLogToExcel + exportWalletLedgerToExcel. كلها تولد Excel حقيقية وتُحمَّل عبر Blob في المتصفح. TypeScript 0 أخطاء.
+- ملاحظة: ظهر خطأ watch ENOENT في Metro (ملف saxes_tmp) — غالبًا عرضي، سيُتحقق منه.
+
+المتبقي:
+1. إضافة أزرار «تصدير Excel» في MonthlyReportPanel وAuditLogPanel (استيراد من @/lib/admin-export) وربطها ببيانات الحالة الفعلية.
+2. قسم الصلاحيات: تبويب «صلاحيات الإدارة 🔑» — حسابات فرعية للإدارة (readAdminPins/writeAdminPins في مكتبة جديدة lib/admin-pins.ts أو داخل admin-auth.ts) مع تفعيل/تعطيل تبويبات محددة لكل حساب. ADMIN_PIN الرئيسي يحتفظ بكل الصلاحيات.
+3. إضافة AdminPinEntry إلى AdminTabId/TABS + لوحة PermissionsPanel.
+4. تحديث تبويب settings لإدارة الصلاحيات.
+5. pnpm check + ADMIN_PIN=123456 pnpm test (157 ناجح).
+6. نقطة تحقق وتسليم.
+نقطة التحقق السابقة: 84b67280. رابط المعاينة: https://8081-i4i95wqp8gqqhyfvnhioj-385e6272.us4.manus.computer
+
+## تحديث: مرحلة Excel + الصلاحيات (متابعة 09:00)
+
+المنجز:
+- exceljs مثبت، وlib/admin-export.ts جاهز (exportMonthlyReportToExcel + exportAuditLogToExcel + exportWalletLedgerToExcel).
+- MonthlyReportPanel: زر «📊 تصدير Excel» مضاف بجانب منتقي الشهر + commissionPercent في MonthlyAggregation + handleExport يعمل. TypeScript نظيف.
+- AuditLogPanel: زر «📊 تصدير Excel» مضاف أعلى القائمة مع handleExport.
+
+المتبقي (مرحلة الصلاحيات):
+- lib/admin-pins.ts كُتب لكن فيه خطأ sed (تعديل logAdminAction فشل لأوامر sed بسبب أحرف `$`). يجب إعادة كتابة أو تصحيح هذه الاستدعاءات الثلاثة في lib/admin-pins.ts لتصبح logAdminAction({ action: ..., details: ... })، وإزالة import من ./admin-types واستبدالها بـ export type AdminTabId = "summary"|"providers"|"ads"|"services"|"requests"|"patients"|"wallets"|"cities"|"international"|"monthly"|"notifications"|"audit"|"settings"|"permissions" (ملاحظة: admin-web.tsx يعرف AdminTabId دون "permissions" في السطر 93 — يجب إضافة "permissions").
+- إضافة تبويب permissions في admin-web.tsx: ALL_ADMIN_TABS موجودة في lib/admin-pins.ts، لكن TABS/AdminTabId في admin-web.tsx سطر 93 ونحتاج إضافة تبويب «صلاحيات الإدارة 🔑» + PermissionsPanel (إضافة/تعديل/حذف حسابات فرعية مع تحديد التبويبات المسموحة).
+- تعديل تسجيل الدخول في AdminWebScreen: بعد إدخال PIN، نستخدم resolveAdminTabAccess(pin, allTabIds) لفلترة التبويبات المتاحة. يجب إيجاد منطق شاشة PIN في admin-web.tsx (AdminPinScreen أو setPin) وربطه.
+- ثم: pnpm check + ADMIN_PIN=123456 pnpm test + نقطة تحقق + تسليم.
+- نقطة التحقق السابقة: 84b67280.
+
+## تحديث 09:02: الصلاحيات مكتملة تقريبًا
+
+المنجز بعد آخر تحديث:
+- lib/admin-pins.ts نظيف (AdminTabId معرّف محليًا، logAdminAction بأخذ input object صحيح — TypeScript نظيف).
+- admin-web.tsx: AdminTabId يتضمن "permissions"، TABS تستبعد permissions وALL_TABS_LIST يضمها، AdminPinGate يقبل (allowedTabs) ويتحقق أولًا من isValidAdminPin (كامل الصلاحيات) ثم resolveAdminTabAccess (صلاحيات فرعية). visibleTabs + safeTab في العرض. PermissionsPanel مضافة في نهاية الملف (إضافة/تعديل/حذف/تفعيل/تعطيل حساب فرعي مع اختيار التبويبات chips). TypeScript نظيف.
+- أزرار تصدير Excel في MonthlyReportPanel وAuditLogPanel موجودة.
+
+المتبقي:
+1. pnpm check ثم ADMIN_PIN=123456 pnpm test (الشرط: PIN طول 6+، القيمة الافتراضية في tests = 123456).
+2. لقطة شاشة للتحقق البصري من تبويب «صلاحيات الإدارة 🔑» وأزرار التصدير (يجب إدخال PIN=123456 في اللقطة).
+3. تعليم بنود todo.md لمرحلة Excel والصلاحيات (موجودة في نهاية todo.md تحت «مرحلة: تصدير Excel وقسم الصلاحيات»).
+4. webdev_save_checkpoint ثم تسليم للمستخدم مع الشرح المطلوب سابقًا (كيفية الوصول لتطبيق الشريك ولوحة التحكم).
+5. في التسليم: تذكير أن الإشعارات الحقيقية عبر الإنترنت مؤجلة للاجتماع القادم لأنها تتطلب استضافة/اشتراك خارجي.
+- نقطة التحقق السابقة: 84b67280.

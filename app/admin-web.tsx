@@ -85,8 +85,21 @@ import {
   writePlatformSettings,
   type PlatformSettings,
 } from "@/lib/platform-settings";
+import {
+  exportAuditLogToExcel,
+  exportMonthlyReportToExcel,
+} from "@/lib/admin-export";
+import {
+  ALL_ADMIN_TABS,
+  addAdminPin,
+  listAdminPins,
+  removeAdminPin,
+  resolveAdminTabAccess,
+  updateAdminPin,
+  type AdminPinEntry,
+} from "@/lib/admin-pins";
 
-type AdminTabId = "summary" | "providers" | "ads" | "services" | "requests" | "patients" | "wallets" | "cities" | "international" | "monthly" | "notifications" | "audit" | "settings";
+type AdminTabId = "summary" | "providers" | "ads" | "services" | "requests" | "patients" | "wallets" | "cities" | "international" | "monthly" | "notifications" | "audit" | "settings" | "permissions";
 
 const OLIVE = "#6B7B3F";
 const GOLD = "#C9A961";
@@ -102,16 +115,29 @@ function useRefreshToken() {
 }
 
 // ══════════════════════ شاشة الدخول ══════════════════════
-function AdminPinGate({ onAuth }: { onAuth: () => void }) {
+function AdminPinGate({ onAuth }: { onAuth: (allowedTabs: AdminTabId[]) => void }) {
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const submit = useCallback(() => {
+  const submit = useCallback(async () => {
+    if (!pin.trim()) return setError("أدخل الرمز أولًا");
     if (isValidAdminPin(pin)) {
       setError("");
-      onAuth();
-    } else {
-      setError("الرمز غير صحيح، حاول مرة أخرى.");
+      onAuth(ALL_ADMIN_TABS.map((item) => item.id));
+      return;
+    }
+    setLoading(true);
+    try {
+      const allowed = await resolveAdminTabAccess(pin, ALL_ADMIN_TABS.map((item) => item.id));
+      if (allowed.length > 0) {
+        setError("");
+        onAuth(allowed);
+      } else {
+        setError("الرمز غير صحيح، حاول مرة أخرى.");
+      }
+    } finally {
+      setLoading(false);
     }
   }, [pin, onAuth]);
 
@@ -156,6 +182,7 @@ function AdminPinGate({ onAuth }: { onAuth: () => void }) {
         {error ? <div style={{ color: "#B55448", fontSize: 13, marginTop: 8 }}>{error}</div> : null}
         <button
           onClick={submit}
+          disabled={loading}
           style={{
             marginTop: 16,
             width: "100%",
@@ -167,9 +194,10 @@ function AdminPinGate({ onAuth }: { onAuth: () => void }) {
             fontSize: 15,
             fontWeight: 700,
             cursor: "pointer",
+            opacity: loading ? 0.6 : 1,
           }}
         >
-          دخول
+          {loading ? "جارٍ التحقق…" : "دخول"}
         </button>
       </div>
     </div>
@@ -177,7 +205,7 @@ function AdminPinGate({ onAuth }: { onAuth: () => void }) {
 }
 
 // ══════════════════════ الإطار الرئيسي ══════════════════════
-const TABS: { id: AdminTabId; title: string; icon: string }[] = [
+const TABS: { id: Exclude<AdminTabId, "permissions">; title: string; icon: string }[] = [
   { id: "summary", title: "نظرة عامة", icon: "📊" },
   { id: "providers", title: "مقدمو الخدمة", icon: "🏥" },
   { id: "ads", title: "الإعلانات", icon: "📢" },
@@ -193,8 +221,16 @@ const TABS: { id: AdminTabId; title: string; icon: string }[] = [
   { id: "settings", title: "الإعدادات العامة", icon: "⚙️" },
 ];
 
+const PERMISSIONS_TAB: { id: "permissions"; title: string; icon: string } = { id: "permissions", title: "صلاحيات الإدارة", icon: "🔑" };
+
+const ALL_TABS_LIST: { id: AdminTabId; title: string; icon: string }[] = [
+  ...TABS,
+  PERMISSIONS_TAB,
+];
+
 export default function AdminWebScreen() {
   const [authenticated, setAuthenticated] = useState(false);
+  const [allowedTabs, setAllowedTabs] = useState<AdminTabId[]>(ALL_ADMIN_TABS.map((item) => item.id));
   const [tab, setTab] = useState<AdminTabId>("summary");
   const { token, refresh } = useRefreshToken();
 
@@ -202,10 +238,13 @@ export default function AdminWebScreen() {
     return (
       <>
         <style>{sharedCss}</style>
-        <AdminPinGate onAuth={() => setAuthenticated(true)} />
+        <AdminPinGate onAuth={(tabs) => setAllowedTabs(tabs)} />
       </>
     );
   }
+
+  const visibleTabs = ALL_TABS_LIST.filter((item) => allowedTabs.includes(item.id));
+  const safeTab = visibleTabs.some((item) => item.id === tab) ? tab : (visibleTabs[0]?.id ?? "summary");
 
   return (
     <>
@@ -216,10 +255,10 @@ export default function AdminWebScreen() {
             <span style={{ fontSize: 22 }}>🛡️</span>
             <span style={{ fontSize: 18, fontWeight: 700, color: "#3A3A3A" }}>لوحة تحكم طبيبي</span>
           </div>
-          <button
-            onClick={() => {
+            <button
+              onClick={() => {
               setAuthenticated(false);
-              setTab("summary");
+              setTab(safeTab);
             }}
             style={{
               background: "none",
@@ -244,7 +283,7 @@ export default function AdminWebScreen() {
             overflowX: "auto",
           }}
         >
-          {TABS.map((item) => (
+          {visibleTabs.map((item) => (
             <button
               key={item.id}
               onClick={() => setTab(item.id)}
@@ -282,6 +321,7 @@ export default function AdminWebScreen() {
           {tab === "notifications" ? <NotificationsCenterPanel onRefresh={refresh} /> : null}
           {tab === "audit" ? <AuditLogPanel onRefresh={refresh} /> : null}
           {tab === "settings" ? <GeneralSettingsPanel onRefresh={refresh} /> : null}
+          {tab === "permissions" ? <PermissionsPanel onRefresh={refresh} /> : null}
         </main>
       </div>
     </>
@@ -1536,6 +1576,7 @@ type MonthlyAggregation = {
   providersShare: number;
   topProviders: { providerName: string; count: number; amount: number }[];
   completedEntries: { ownerId: string; ownerName: string; amount: number }[];
+  commissionPercent: number;
 };
 
 async function buildMonthlyReport(monthKey?: string): Promise<MonthlyAggregation> {
@@ -1599,6 +1640,7 @@ async function buildMonthlyReport(monthKey?: string): Promise<MonthlyAggregation
     providersShare,
     topProviders,
     completedEntries,
+    commissionPercent,
   };
 }
 
@@ -1632,6 +1674,22 @@ function MonthlyReportPanel({ onRefresh }: { onRefresh: () => void }) {
     }
   }, []);
 
+  const handleExport = async () => {
+    if (!report) return;
+    const success = await exportMonthlyReportToExcel({
+      monthLabel: report.monthLabel,
+      completedServices: report.completedServices,
+      completedConsultations: report.completedConsultations,
+      grossRevenue: report.grossRevenue,
+      platformCommission: report.platformCommission,
+      providersShare: report.providersShare,
+      commissionPercent: report.commissionPercent,
+      topProviders: report.topProviders,
+      completedEntries: [],
+    });
+    void success;
+  };
+
   useEffect(() => {
     load(selectedMonth);
   }, [selectedMonth, load]);
@@ -1657,6 +1715,7 @@ function MonthlyReportPanel({ onRefresh }: { onRefresh: () => void }) {
               <option key={option.key} value={option.key}>{option.label}</option>
             ))}
           </select>
+          <button style={secondaryButtonStyle} onClick={() => void handleExport()}>📊 تصدير Excel</button>
         </div>
         {loading ? (
           <div style={{ textAlign: "center", color: "#8A8278", padding: 20 }}>جارٍ تجميع البيانات…</div>
@@ -2000,11 +2059,18 @@ function AuditLogPanel({ onRefresh }: { onRefresh: () => void }) {
   void onRefresh;
   void load;
 
+  const handleExport = async () => {
+    await exportAuditLogToExcel(entries.map((entry) => ({ id: entry.id, action: entry.action, details: entry.details, createdAt: entry.createdAt })));
+  };
+
   const rowStyle: React.CSSProperties = { display: "flex", alignItems: "center", gap: 12, padding: "9px 4px", borderBottom: "1px solid #F1EDE3", fontSize: 13 };
 
   return (
     <div style={{ display: "grid", gap: 20 }}>
       <Card title="سجل نشاط الإدارة" note="كل إجراء يدوي تنفذه الإدارة يُسجَّل هنا تلقائيًا مع التاريخ والوقت للتتبع والمساءلة">
+        <div style={{ marginBottom: 12 }}>
+          <button style={secondaryButtonStyle} onClick={() => void handleExport()} disabled={entries.length === 0}>📊 تصدير Excel</button>
+        </div>
         {loading ? (
           <div style={{ textAlign: "center", color: "#8A8278", padding: 20 }}>جارٍ تحميل السجل…</div>
         ) : entries.length === 0 ? (
@@ -2019,6 +2085,214 @@ function AuditLogPanel({ onRefresh }: { onRefresh: () => void }) {
                   {entry.details ? <div style={{ color: "#8A8278", fontSize: 12 }}>{entry.details}</div> : null}
                 </div>
                 <div style={{ color: "#B0A898", fontSize: 11, flexShrink: 0 }}>{new Date(entry.createdAt).toLocaleString("ar-LY")}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+// ══════════════════════ لوحة صلاحيات الإدارة ══════════════════════
+function PermissionsPanel({ onRefresh }: { onRefresh: () => void }) {
+  const [pins, setPins] = useState<AdminPinEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<AdminPinEntry | null>(null);
+  const [formName, setFormName] = useState("");
+  const [formPin, setFormPin] = useState("");
+  const [formTabs, setFormTabs] = useState<AdminTabId[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [formError, setFormError] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await listAdminPins();
+      setPins(data.pins);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  void onRefresh;
+
+  const openAdd = () => {
+    setEditing(null);
+    setFormName("");
+    setFormPin("");
+    setFormTabs([]);
+    setFormError("");
+    setAdding(true);
+  };
+
+  const openEdit = (entry: AdminPinEntry) => {
+    setAdding(false);
+    setEditing(entry);
+    setFormName(entry.name);
+    setFormPin(entry.pin);
+    setFormTabs(entry.allowedTabs.slice());
+    setFormError("");
+  };
+
+  const closeForm = () => {
+    setAdding(false);
+    setEditing(null);
+    setFormError("");
+  };
+
+  const toggleTab = (tabId: AdminTabId) => {
+    setFormTabs((current) =>
+      current.includes(tabId) ? current.filter((item) => item !== tabId) : [...current, tabId],
+    );
+  };
+
+  const submit = async () => {
+    setFormError("");
+    if (!formName.trim()) return setFormError("أدخل اسم الحساب الفرعي");
+    if (formPin.trim().length < 6) return setFormError("الرمز يجب أن يتكون من 6 أحرف على الأقل");
+    if (formTabs.length === 0) return setFormError("اختر تبويبًا واحدًا على الأقل");
+
+    setSaving(true);
+    try {
+      if (editing) {
+        await updateAdminPin({ id: editing.id, name: formName, pin: formPin, allowedTabs: formTabs });
+      } else {
+        await addAdminPin({ name: formName, pin: formPin, allowedTabs: formTabs });
+      }
+      await load();
+      setSaved(true);
+      closeForm();
+      setTimeout(() => setSaved(false), 3000);
+      onRefresh();
+    } catch (failure) {
+      const message = failure instanceof Error ? failure.message : "حدث خطأ، حاول مرة أخرى";
+      setFormError(message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleEnabled = async (entry: AdminPinEntry) => {
+    try {
+      await updateAdminPin({ id: entry.id, enabled: !entry.enabled });
+      await load();
+    } catch {
+      void 0;
+    }
+  };
+
+  const remove = async (entry: AdminPinEntry) => {
+    if (!globalThis.confirm(`هل تريد حذف الحساب الفرعي «${entry.name}»؟`)) return;
+    try {
+      await removeAdminPin(entry.id);
+      await load();
+      onRefresh();
+    } catch {
+      void 0;
+    }
+  };
+
+  const cardStyle: React.CSSProperties = { background: "#fff", borderRadius: 12, padding: 20, border: "1px solid #E7E0D2", marginBottom: 16 };
+  const chipStyle = (active: boolean): React.CSSProperties => ({
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 4,
+    padding: "6px 12px",
+    borderRadius: 8,
+    border: active ? "1px solid transparent" : "1px solid #DDD6C8",
+    background: active ? OLIVE : "#F7F4EC",
+    color: active ? "#fff" : "#6A6256",
+    fontSize: 12,
+    fontWeight: active ? 700 : 400,
+    cursor: "pointer",
+  });
+
+  return (
+    <div style={{ display: "grid", gap: 20 }}>
+      <Card title="صلاحيات الإدارة الفرعية" note="أنشئ حسابات فرعية للإدارة برمز خاص لكل حساب، وحدد التبويبات التي يسمح له بالوصول إليها. الرمز الرئيسي للمالك يتمتع بجميع الصلاحيات دائمًا.">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
+          <div style={{ fontSize: 13, color: "#6A6256" }}>
+            عدد الحسابات الفرعية: <strong style={{ color: "#3A3A3A" }}>{pins.length} / 10</strong>
+          </div>
+          {adding || editing ? (
+            <button style={secondaryButtonStyle} onClick={closeForm}>إلغاء</button>
+          ) : (
+            <button style={{ ...secondaryButtonStyle, background: OLIVE, color: "#fff", border: "1px solid transparent" }} onClick={openAdd} disabled={pins.length >= 10}>
+              + حساب فرعي جديد
+            </button>
+          )}
+        </div>
+
+        {(adding || editing) ? (
+          <div style={cardStyle}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "#3A3A3A", marginBottom: 12 }}>
+              {adding ? "إضافة حساب فرعي جديد" : `تعديل الحساب: ${editing?.name ?? ""}`}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12, marginBottom: 14 }}>
+              <Field label="اسم الحساب" value={formName} onChange={setFormName} />
+              <Field label="الرمز (6 أحرف على الأقل)" value={formPin} onChange={setFormPin} type="password" />
+            </div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#6A6256", marginBottom: 8 }}>التبويبات المسموح بها:</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
+              {ALL_ADMIN_TABS.filter((item) => item.id !== "permissions").map((item) => (
+                <button key={item.id} style={chipStyle(formTabs.includes(item.id))} onClick={() => toggleTab(item.id)}>
+                  {formTabs.includes(item.id) ? "✓ " : ""}{item.title}
+                </button>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              <button style={{ ...secondaryButtonStyle, background: OLIVE, color: "#fff", border: "1px solid transparent" }} onClick={submit} disabled={saving}>
+                {saving ? "جارٍ الحفظ…" : "حفظ الحساب"}
+              </button>
+              {saved ? <span style={{ color: "#4E6B2A", fontSize: 13, fontWeight: 700 }}>✓ تم الحفظ</span> : null}
+              {formError ? <span style={{ color: "#B55448", fontSize: 13 }}>{formError}</span> : null}
+            </div>
+          </div>
+        ) : null}
+
+        {loading ? (
+          <div style={{ textAlign: "center", color: "#8A8278", padding: 20 }}>جارٍ تحميل الحسابات…</div>
+        ) : pins.length === 0 ? (
+          <div style={{ textAlign: "center", color: "#8A8278", padding: 20 }}>لا توجد حسابات فرعية بعد. أنشئ حسابًا جديدًا لمنح شخص آخر صلاحية محدودة للدخول إلى اللوحة.</div>
+        ) : (
+          <div style={{ display: "grid", gap: 10 }}>
+            {pins.map((entry) => (
+              <div key={entry.id} style={{ background: "#F7F4EC", borderRadius: 10, padding: 14, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                <div style={{ flex: 1, minWidth: 200 }}>
+                  <div style={{ fontWeight: 700, color: "#3A3A3A", fontSize: 14 }}>{entry.name}</div>
+                  <div style={{ fontSize: 12, color: "#8A8278", marginTop: 4 }}>
+                    رمز من {entry.pin.length} أحرف — {entry.allowedTabs.length} تبويب — أُنشئ {new Date(entry.createdAt).toLocaleDateString("ar-LY")}
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6 }}>
+                    {entry.allowedTabs.map((tabId) => {
+                      const meta = ALL_ADMIN_TABS.find((item) => item.id === tabId);
+                      return meta ? (
+                        <span key={tabId} style={{ fontSize: 11, background: "#fff", borderRadius: 6, padding: "2px 8px", color: "#6A6256" }}>{meta.title}</span>
+                      ) : null;
+                    })}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <button
+                    style={{
+                      ...secondaryButtonStyle,
+                      background: entry.enabled ? "#E8F3E0" : "#F9E9E6",
+                      color: entry.enabled ? "#4E6B2A" : "#B55448",
+                    }}
+                    onClick={() => toggleEnabled(entry)}
+                  >
+                    {entry.enabled ? "مفعّل" : "معطّل"}
+                  </button>
+                  <button style={secondaryButtonStyle} onClick={() => openEdit(entry)}>تعديل</button>
+                  <button style={{ ...secondaryButtonStyle, color: "#B55448" }} onClick={() => remove(entry)}>حذف</button>
+                </div>
               </div>
             ))}
           </div>
