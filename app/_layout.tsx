@@ -90,6 +90,7 @@ export default function RootLayout() {
             <Stack.Screen name="register" />
             <Stack.Screen name="registration-success" />
             <Stack.Screen name="home" />
+            <Stack.Screen name="admin-web" />
             <Stack.Screen name="care-request" />
             <Stack.Screen name="profile" />
             <Stack.Screen name="address-picker" />

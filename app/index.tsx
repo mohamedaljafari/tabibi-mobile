@@ -1,11 +1,16 @@
 import { useEffect } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
-import { router } from "expo-router";
+import { router, useSegments } from "expo-router";
 
 import { getPatientProfile } from "@/lib/patient-profile";
 
 export default function EntryScreen() {
+  const segments = useSegments();
+
   useEffect(() => {
+    // لوحة التحكم المستقلة لها مسار مخصص على الويب ولا تمر بحارس تسجيل دخول المريض.
+    const isAdminRoute = segments[0] === "admin-web";
+    if (isAdminRoute) return;
     getPatientProfile().then((profile) => {
       router.replace((profile ? (profile.isSetupComplete ? "/home" : "/profile") : "/login") as never);
     });

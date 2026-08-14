@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
-import { router } from "expo-router";
+import { router, useSegments } from "expo-router";
 
 import { getPatientProfile } from "@/lib/patient-profile";
 
@@ -15,7 +15,12 @@ import { getPatientProfile } from "@/lib/patient-profile";
  * - غير مسجّل: تسجيل الدخول `/login`.
  */
 export default function TabHomeGate() {
+  const segments = useSegments();
+
   useEffect(() => {
+    // لوحة التحكم المستقلة (admin-web) لا تمر بهذه البوابة على الويب.
+    const isAdminRoute = segments[0] === "admin-web";
+    if (isAdminRoute) return;
     let cancelled = false;
     void (async () => {
       const profile = await getPatientProfile();

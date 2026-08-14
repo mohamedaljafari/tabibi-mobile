@@ -153,3 +153,112 @@ id, type(local|international), mode(instant|scheduled), scheduledAt?, externalDo
 3. pnpm check + pnpm test في tabibi-mobile، webdev_save_checkpoint.
 4. GitHub: gh repo list لمعرفة المستودعات. رفع tabibi-partner: أنشئ مستودع tabibi-partner --private، أضف remote origin، ارفع كاملاً. ثم zip (/home/ubuntu/tabibi-partner) للتنزيل — أرسل كملف مرفق.
 5. تسليم result مع manus-webdev://checkpoint.
+
+## حالة 05:45 (قبل ضغط السياق)
+1. الاقتراحات الثلاثة المعتمدة اكتملت وفُحصت: إشعار «بدأت الاستشارة» (notifyConsultationStarted في tabibi-mobile/lib/consultation-requests.ts + استدعاؤها في requests.tsx بالشريك عند ضغط «بدء الاستشارة»)، زر «إتمام الاستشارة» بالشريك (completeConsultation + إشعار request_completed للطرف patient — أُضيف الطلب type إلى notifications.ts بالشريك وبالمريض)، تعديل الطبيب الخارجي من لوحة التحكم (updateExternalDoctor في tabibi-mobile/lib/consultation-doctors.ts + زر تعديل ونافذة تعديل في InternationalDoctorsPanel داخل app/admin.tsx).
+2. TypeScript نظيف، 157 اختبار مريض ناجح، وتم حفظ نقطة التحقق d1117992.
+3. المستخدم أرسل لقطتي شاشة «حسابي» (/profile): الشاشة تعكس ما هو موجود — لا مشكلة ظاهرة؛ البطاقة/العناوين/اقتراح مدينة/إفراد العائلة تعمل. أخبرته بأنها تعمل بشكل طبيعي وسأكمل رفع GitHub.
+4. المتبقي: تحميل تطبيق الشريك tabibi-partner (الموجود في /home/ubuntu/tabibi-partner) على GitHub — gh repo list لمعرفة المستودعات (tabibi-mobile مرفوع سابقًا). إنشاء مستودع جديد --private باسم tabibi-partner، إضافة remote في /home/ubuntu/tabibi-partner ورفع كاملاً. ثم zip للمشروعين (zip -r /home/ubuntu/tabibi-mobile.zip tabibi-mobile /home/ubuntu/tabibi-partner.zip tabibi-partner) وتسليمهما مرفقين في النتيجة النهائية.
+5. بعد الرفع: webdev_save_checkpoint نهائي + تسليم result برسالة نهائية تشمل: ملخص الأعمال (اقتراحات 3 + رفع GitHub + ملفات تنزيل)، المرفقات: manus-webdev://d1117992 + zip للشريك (وللمريض إن لزم)، واقتراحات خطوات قادمة.
+
+## حالة 05:55 — مرحلة فصل لوحة التحكم
+1. طلب المستخدم الجديد: لوحة التحكم يجب أن تكون منفصلة تمامًا عن التطبيقين؛ لن يتدخل فيها أحد من التطبيق. موافقتي المقترحة (وافق عليها): إخراجها من تطبيق المريض وتحويلها لواجهة ويب مستقلة تتشارك البيانات نفسها، استعدادًا للاستضافة الأحد/الاثنين.
+2. ADMIN_PIN تم التأكد منه عبر webdev_request_secrets (متوفر في البيئة EXPO_PUBLIC_ADMIN_PIN يُحقن في dev:metro عبر cross-env). CI يمرره.
+3. الوضع الحالي: admin.tsx (1710 سطرًا) داخل app/ بتبويبات: summary/providers/ads/services/requests/patients/wallets/cities/international. يظهر في profile.tsx كأيقونة shield تدفع /admin.
+4. الخطة: إنشاء app/admin-web.tsx (web-only صفحة كاملة) — يمكن استخدام Platform.OS === "web" لإخفاء ScreenContainer واستخدام HTML مباشرة، أو إعادة كتابة بواجهة HTML/CSS كاملة تناسب الويب. الأجزاء (Panels) كلها دوال React تعتمد على AsyncStorage نفسها (مفاتيح: service_requests_v1 وغيرها عبر مكتبات lib/*.ts) — يمكن استيرادها من ملف lib/admin.ts وlib/wallets.ts وغيرها لأن الواجهة تعمل في نفس نطاق المتصفح وبالتالي نفس localStorage (AsyncStorage على الويب = localStorage بنفس المفتاح tabibi؟ يجب التحقق من KEY prefix).
+5. المتبقي: (أ) إنشاء /admin-web بواجهة HTML/React كاملة مع شاشة PIN، (ب) حذف أيقونة shield والرابط إلى /admin من profile.tsx وحذف app/admin.tsx، (ج) اختبار، (د) رفع GitHub، (هـ) تسليم result مع الشرح.
+6. ملاحظة مهمة: على الويب AsyncStorage يعمل عبر localStorage بالمفتاح نفسه في نفس النطاق — اللوحة المنفصلة داخل نفس مشروع Expo ستعمل في نفس النطاق (https://8081-...manus.computer/admin-web) وستقرأ نفس البيانات. عند الانتقال للاستضافة الخارجية لاحقًا يجب أن تكون اللوحة والتطبيقات على نفس النطاق أو ننقل البيانات لقاعدة بيانات SQL مشتركة (سيفعلها المستخدم عند الاستضافة).
+
+## حالة 05:58 — تقدم بناء admin-web.tsx
+أنشأت /home/ubuntu/tabibi-mobile/app/admin-web.tsx بإطار HTML كامل (AdminPinGate + شريط تبويبات رئيسي main). الأقسام التسعة تستلم onRefresh فقط: SummaryPanel/ProvidersPanel/AdsPanel/ServicesPanel/RequestsPanel/PatientsPanel/WalletsPanel/CitiesPanel/InternationalDoctorsPanel — يجب إضافة كل واحدة داخل الملف نفسه (استنساخ منطقها من app/admin.tsx السطور 185-1710 مع تحويل RN إلى HTML: View→div, Text→div, Pressable/TouchableOpacity→button, TextInput→input, FlatList→map, Alert→window.confirm). الأنماط inline styles. الألوان: OLIVE #6B7B3F, GOLD #C9A961.
+الاستيرادات موجودة بالفعل (lib/admin, lib/wallets, lib/patient-profile, lib/libya-cities, lib/city-suggestions, lib/consultation-doctors, lib/provider-registry).
+بعد اكتمال الملف: (1) حذف <Pressable shield> من app/profile.tsx سطر 65 تقريبًا (أيقونة adminShield style سطر 109) وإزالة app/admin.tsx نهائيًا. (2) pnpm check + pnpm test. (3) رفع GitHub (repo tabibi-mobile main). (4) result + الشرح للمستخدم: اللوحة الآن /admin-web منفصلة عن التطبيقين، بياناتها مشتركة عبر localStorage بنفس النطاق، وعند الاستضافة الأحد/الاثنين ننقلها لقاعدة SQL مشتركة.
+
+## حالة 05:53 — تقدم admin-web.tsx (تفصيل تقني)
+- أُنشئ /app/admin-web.tsx (~590 سطرًا): شاشة PIN (AdminPinGate) + main بشريط 9 تبويبات + لوحات مكتملة: SummaryPanel, InternationalDoctorsPanel, CitiesPanel (مع isAreaEnabled مساعدة async تقرأ tabibi.libya_cities.v1 من AsyncStorage)، والعناصر المساعدة: Card, Field, ActionChip, Avatar, StatusBadge, PrimaryButton.
+- الأنواع الصحيحة المكتشفة: AdminSummary = {providers, activeProviders, frozenProviders, pendingProviders, requests, pendingRequests, acceptedRequests, ratings, ads, enabledAds}. LibyaArea ليس فيه enabled — تفعيل المنطقة عبر disabledAreas في tabibi.libya_cities.v1. CitySuggestion: لا توجد area/reviewed/createdAt (فحص الحقول المطلوبة لاحقًا من city-suggestions.ts).
+- المتبقي: (1) إصلاح حقول CitySuggestion + (2) إضافة لوحات: ProvidersPanel/AdsPanel/ServicesPanel/RequestsPanel/PatientsPanel/WalletsPanel من app/admin.tsx مع تحويل RN→HTML. (3) حذف app/admin.tsx وأيقونة shield من profile.tsx. (4) check+test, checkpoint, GitHub push, result.
+- استيرادات admin-web الحالية: lib/admin (addProviderAccount, addService, cancelAdminRequest, deleteAdminAd, deleteAdminRating, readAdminAds, readAdminProviderAccounts, readAdminRequests, readAdminRatings, readAdminSummary, readServicesCatalog, toggleAdminAd, toggleService, upsertAdminAd, AdminAdSlide), lib/wallets (getWalletSummaries, getWalletSummary, removeWalletEntry, validateNewWalletEntry, addWalletEntry, LedgerEntryKind, NewWalletEntry, WalletSummary), lib/patient-profile (getPatientProfile, readMedicalAccessGrants, revokeMedicalAccess), lib/libya-cities (getEnabledCities, getLibyaCities, setCityEnabled, setAreaEnabled, TRIPOLI_CITY_ID, LibyaCity), lib/city-suggestions (readCitySuggestions, markCitySuggestionReviewed, removeCitySuggestion, CitySuggestion), lib/consultation-doctors (addExternalDoctor, makeInitials, readExternalDoctors, removeExternalDoctor, toggleExternalDoctor, updateExternalDoctor, ExternalConsultationDoctor), lib/provider-registry (ProviderAccount), lib/admin-auth (isValidAdminPin), @react-native-async-storage/async-storage.
+
+## حالة 05:55 — معلومات هيكلية من app/admin.tsx لاستنساخها في admin-web.tsx
+تم استنساخ InternationalDoctorsPanel وCitiesPanel وSummaryPanel في admin-web.tsx. المتبقي: ProvidersPanel, AdsPanel, ServicesPanel, RequestsPanel, PatientsPanel, WalletsPanel.
+بنية لوحات admin.tsx الأصلية (سطور 554-800+):
+- ProvidersPanel: readAdminProviderAccounts → updateProviderStatus(id, "active"|"frozen"|"cancelled"|"pending")، إضافة حساب عبر addProviderAccount({fullName, role, phone, password, status:"active", specializations:[...], yearsOfExperience, bio, services:[], availability:{availableNow:false,slots:[]}, documents:[]}). statusLabel/statusColor mapping.
+- AdsPanel: readAdminAds → AdminAdSlide {id,title,eyebrow,copy,position:"top"|"bottom",enabled}، toggleAdminAd(id,enabled), deleteAdminAd(id), upsertAdminAd(input), AdForm input includes image uri.
+- ServicesPanel: readServicesCatalog → service {id, name, enabled}، toggleService(id, enabled), إضافة خدمة جديدة عبر addService (فحص التوقيع لاحقًا).
+- RequestsPanel: readAdminRequests → طلبات الخدمة للمراجعة/الإلغاء cancelAdminRequest(id).
+- PatientsPanel/WalletsPanel: من lib/wallets (getWalletSummaries, removeWalletEntry...) وlib/patient-profile (getPatientProfile, readMedicalAccessGrants, revokeMedicalAccess) وlib/admin (readAdminRatings, deleteAdminRating, addService).
+ألوان: OLIVE #6B7B3F, GOLD #C9A961, error #B55448. خلفية #F7F4EC، بطاقات #fff، حد #E7E0D2.
+بعد اكتمال الملف: حذف app/admin.tsx، إزالة أيقونة shield من profile.tsx (سطر ~65 وstyle سطر ~109)، pnpm check + test, checkpoint, push GitHub (tabibi-mobile), result.
+
+## حالة 06:02 — كل التفاصيل الهيكلية للوحات الست المتبقية في admin-web.tsx (من app/admin.tsx)
+admin-web.tsx يحتوي بالفعل: AdminPinGate + AdminWebScreen (شريط تبويبات، دالة renderPanel عند السطر ~238 تبحث عن ProvidersPanel/AdsPanel/ServicesPanel/RequestsPanel/PatientsPanel/WalletsPanel)، InternationalDoctorsPanel (253-422)، CitiesPanel (425-558)، SummaryPanel (560-603)، عناصر مساعدة DOM (Card, Field, ActionChip, Avatar, StatusBadge, PrimaryButton, Button, Input) عند 608-733.
+توقيعات المكتبات (lib/admin.ts): readAdminAds/upsertAdminAd({enabled,position:"top"|"bottom",eyebrow,title,copy,icon,accent,accentSoft}, id)/deleteAdminAd/toggleAdminAd، AdminAdSlide{id,enabled,position,eyebrow,title,copy,icon,accent,accentSoft}. readServicesCatalog→ServicesCatalog{services:[{key,title,enabled}]}، toggleService(key,enabled)، addService(title). readAdminProviderAccounts→ProviderAccount{id,fullName,role,phone,phone2?,passwordHash,phoneVerified,status:"pending"|"active"|"frozen"|"cancelled",specializations,yearsOfExperience,bio,services,availability,documents,photoUrl,avatar?,createdAt}، updateProviderStatus(id,status)، addProviderAccount({fullName,role,phone,phone2,password,status:"active",specializations:[],yearsOfExperience,bio,services:[],availability:{availableNow:false,slots:[]},documents:[],photoUrl}). readAdminRequests→ServiceRequest[]{id,services:[{serviceName,price}],patientName,providerId,providerName,createdAt,status,paymentMethod}, cancelAdminRequest(id). readAdminRatings/deleteAdminRating(id). readAdminSummary→AdminSummary (المحققة في SummaryPanel).
+lib/wallets.ts: WalletSummary{ownerId,ownerName,role,balance,credit,debit,entries:WalletLedgerEntry{kind:"credit"|"debit",type,recharge|payment|refund|earned|charge,amount,description,reference,createdAt,ownerId,ownerName,role}}، NewWalletEntry{ownerId,ownerName,role,kind,type,amount,description,reference}، validateNewWalletEntry→string|null، addWalletEntry، getWalletSummary(id)، getWalletSummaries(role)، removeWalletEntry(id).
+lib/patient-profile.ts: getPatientProfile→{phone,fullName,...}، readMedicalAccessGrants→{id,providerId,providerName,recordOwnerNames}[]، revokeMedicalAccess(id).
+ألوان: OLIVE #6B7B3F، GOLD #C9A961، #4E7A3F أخضر، #B55448 أحمر، #9A8159، #A65E67، #627F9D، #8F7D98. خلفية #F7F4EC.
+statusLabel/statusColor للحالات: active=مفعّل/#4E7A3F، frozen=مجمّد/#9A8159، cancelled=ملغى/#B55448، default=بانتظار الموافقة/GOLD.
+requestStatusLabel: pending=معلّق/GOLD، accepted=مقبول/#4E7A3F، completed=مكتمل/OLIVE، rejected=مرفوض/#B55448، default=ملغى/#6A6256.
+kindArabicLabel: recharge=شحن رصيد، payment=دفع خدمة، refund=استرداد، earned=مستحق له، charge=مستحق عليه.
+ProviderEarningsLookup (يظهر فقط provider): بحث عن مقدم خدمة من readAdminProviderAccounts وعرض WalletSummaryCard.
+PatientAccessRow: فلترة grants حيث recordOwnerNames يشمل رقم هاتف المريض (toLowerCase).
+بعد الإكمال: حذف app/admin.tsx، إزالة Pressable الدرع من profile.tsx (سطور 63-66، ستايل adminShield 103-110)، check+test، checkpoint، git push، result.
+
+## حالة 05:56 — إصلاح admin-web.tsx (1443 سطرًا)
+الأخطاء المتبقية كلها داخل admin-web.tsx (الأنماط المفقودة ليست معرّفة بعد):
+1. نقل `import type { AdminSummary }` من سطر 605 (منتصف الكود) إلى الأعلى.
+2. تعريف الأنماط المفقودة في نهاية الملف: panelTitleStyle, panelHintStyle, formCardStyle, formSectionTitleStyle, inputStyle, chipStyle, chipRowStyle, activeChipStyle, actionChipStyle(color), actionRowStyle, cardStyle, cardHeaderStyle, cardIdentityStyle, cardNameStyle, cardSubtitleStyle, badgeStyle, dimCardStyle, emptyTextStyle, errorTextStyle, primaryButtonStyle, secondaryButtonStyle, smallButtonStyle, addRowStyle.
+3. updateProviderStatus غير موجود — يجب فحص ما هو موجود في lib/admin.ts لاستبدالها (ربما updateAdminProviderStatus أو استخدام toggle).
+4. ProviderAccount بلا phone2 ولا photoUrl: إزالتها من نموذج مقدمي الخدمة.
+5. toggleAdminAd(id) يحتاج وسيطين (id, enabled).
+بعد الإصلاح: حذف admin.tsx من app/ وإزالة الرابط من profile.tsx، ثم pnpm check + pnpm test، ثم checkpoint وتسليم مع شرح الفصل للمستخدم.
+
+## مشكلة 05:58: /admin-web يعيد التوجيه إلى /login
+- عند فتح /admin-web في المتصفح، حارس تسجيل الدخول في _layout (للمريض) يعيد التوجيه إلى /login.
+- الحل: استثناء مسار "admin-web" من حارس تسجيل الدخول في app/_layout.tsx (المسار يجب أن يبقى متاحًا على الويب دون حارس، وشاشة PIN داخلية تحميه).
+- admin-web.tsx جاهز 1474 سطرًا (شاشة PIN + لوحات) لكن لا يظهر بسبب الحارس.
+
+## تشخيص 05:59: سبب التوجيه إلى /login
+- سبب إعادة التوجيه هو app/(tabs)/index.tsx (TabHomeGate): يعيد التوجيه إلى /login عندما لا يكون هناك بروفايل مريض. هذا البوابة الافتراضية داخل تبويب (tabs) وتُفعَّل لأن مسار /admin-web غير مُعرَّف في Stack الرئيسي؟ لا — بل لأن Expo Router يقرّب المسار من البوابة الافتراضية (index) في (tabs).
+- ملاحظة: admin-web.tsx موجود في app/admin-web.tsx لكن لم يظهر في قائمة ls app بعد حذف admin.tsx — يجب التأكد أن الملف لا يزال موجودًا (ls: admin-web.tsx موجود ✓).
+- الحل الصحيح: إضافة Stack.Screen name="admin-web" في app/_layout.tsx (Stack root) لتسجيل المسار صراحة، والـ entry guard في index.tsx تم استثناءه بالفعل (/admin-web في pathname).
+- تبويب (tabs)/index.tsx: لا حاجة لاستثناء لأن admin-web ليس داخل (tabs)؛ تسجيله في الـ Stack كافٍ.
+
+## حالة 06:00 — فصل لوحة التحكم (المرحلة الحالية)
+
+المطلوب من المستخدم: فصل لوحة التحكم نهائيًا عن تطبيق المريض؛ لا يراها المريض ولا الشريك من داخل التطبيق. القرار المعتمد (وافق عليه المستخدم): لوحة التحكم كواجهة ويب مستقلة على المسار /admin-web تعمل في المتصفح على أي جهاز وتتشارك البيانات نفسها (AsyncStorage/localStorage ضمن النطاق نفسه)، محمية بـADMIN_PIN عبر EXPO_PUBLIC_ADMIN_PIN.
+
+المنجز حتى الآن:
+1. أُنشئ app/admin-web.tsx (1474 سطرًا): صفحة ويب كاملة بعناصر DOM قياسية (div/button/input)، مكوّن AdminWebScreen فيه تبويبات 9: summary|providers|ads|services|requests|patients|wallets|cities|international، مع AdminPinGate (isValidAdminPin من @/lib/admin-auth).
+2. استيرادات AdminWebScreen: admin، wallets (addWalletEntry مستقل)، patient-profile (getPatientProfile/readMedicalAccessGrants/revokeMedicalAccess)، libya-cities، city-suggestions، consultation-doctors (add/remove/toggle/updateExternalDoctor/makeInitials)، provider-registry (ProviderAccount فقط type import).
+3. حذف لوحة التحكم القديمة من تطبيق المريض: حُذف app/admin.tsx نهائيًا، أُزيلت أيقونة الدرع من profile.tsx، وأُزالت الإحالات إلى "/admin" من home.tsx وغيرها (باقي /admin-web فقط).
+4. أُضيف استثناء في app/index.tsx (TabHomeGate-like entry): if onWeb && pathname.startsWith("/admin-web") return; — لمنع التوجيه إلى /login.
+5. أُضيف Stack.Screen name="admin-web" في app/_layout.tsx بعد "home".
+
+المشكلة الأخيرة: عند فتح /admin-web في المتصفح كان يعيد التوجيه إلى /login. شُخّص أنه بسبب عدم تسجيل المسار في Stack (تجاوزت Expo Router إلى البوابة الافتراضية) — أُصلح بتسجيله في Stack. أُعيد تشغيل Metro بعد تعديل سابق ترك خطأ Babel قديمًا في الذاكرة (خطأ 05:56 عند سطر 28 كان متبقيًا في الكاش — أُصلح بإعادة ترتيب الاستيرادات ثم إعادة تشغيل السيرفر).
+
+المتبقي:
+1. التحقق عبر المتصفح أن /admin-web يعرض شاشة PIN ثم اللوحات بعد إدخال الرمز.
+2. ملاحظة: EXPO_PUBLIC_ADMIN_PIN يُمرر عبر dev:metro كـ $ADMIN_PIN (يعمل). في إنتاج الويب (expo export/static) نحتاج التحقق من أن env متاح — ربما نحتاج build hook أو public config في app.config.ts مع extra.
+3. اختبار pnpm test + pnpm check.
+4. حفظ نقطة تحقق وتسليم الشرح للمستخدم (شرح كيف تعمل اللوحة المنفصلة الآن + خطة الأحد/الاثنين للاستضافة: عند الاستضافة نرفع الموقع + DB مشتركة بدل localStorage: سيُستبدل التخزين بخدمة مركزية مثل Data API/Postgres ليعمل أونلاين بين الأجهزة).
+
+ملاحظة للمستخدم لاحقًا: البيانات حاليًا localStorage محلية على كل جهاز؛ اللوحة المنفصلة تقرأ بيانات الجهاز الذي تُفتح منه فقط. عند الاستضافة ننتقل لقاعدة بيانات مركزية فيصبح كل شيء متزامنًا بين التطبيقين واللوحة.
+
+## تشخيص 06:00 — التوجيه المستمر إلى /login
+
+الأعراض: عند فتح /admin-web يظهر أولًا شاشة PIN (لقطة أولية نجحت) لكن مباشرة بعدها يعاد التوجيه إلى /login. الرمز ADMIN_PIN=10081460020501 صحيح في البيئة، وEXPO_PUBLIC_ADMIN_PIN غير مضبوط.
+
+الاستنتاج: هناك حارس آخر غير index.tsx يعيد التوجيه. أخطر مرشح هو أن app/_layout.tsx لا يحتوي على حارس، لكن ملاحظة مهمة: عند الضغط على «دخول» في AdminPinGate لم تُقرأ ENV من داخل browser (process.env غير موجود على الويب!)، فـ isValidAdminPin يرجع false ثم... لكن المشكلة تحدث حتى قبل إدخال الرمز (التوجيه عند فتح الصفحة مباشرة إلى /login).
+
+ملاحظة من أول navigate: أول فتح أظهر شاشة PIN ثم بعد إدخال Enter تحول إلى /login. الفرضية: Expo Router على الويب يعيد توجيه أي مسار غير مسجل في Tabs إلى أول تبويب؟ لا — index.tsx يستثني /admin-web. لكن الاستثناء يتحقق من window.location.pathname عند تحميل / (EntryScreen) وليس عند فتح /admin-web مباشرة لأن admin-web هو root screen في Stack — لكن Expo Router يبدأ من index.tsx دائمًا في SPA: كل التحميل يبدأ من EntryScreen الذي يستثني admin-web. إذًا التوجيه يجب ألا يحدث...
+
+فرضية بديلة: admin-web.tsx نفسه يحتوي router.push أو هناك useEffect في ملف آخر. أو أن الحارس في (tabs)/_layout.tsx. أو أن التوجيه من Expo (web) 404 handler → /login.
+
+## حالة فصل لوحة التحكم (admin-web) — تم اختبارها بنجاح
+- URL الويب: /admin-web على عنوان المعاينة — شاشة PIN (10081460020501) ثم 9 تبويبات: نظرة عامة، مقدمو الخدمة، الإعلانات، الخدمات، الطلبات، المرضى، المحفظات، المدن والمناطق، أطباء الخارج.
+- اختُبر تبويب مقدمو الخدمة: إضافة «د. أحمد الشامي» (طبيب، طب أطفال، 15 سنة خبرة، 0912345678) نجحت وتظهر بطاقة «بانتظار الموافقة» مع أزرار تفعيل/تجميد/إلغاء.
+- إصلاحات حارس الدخول: استثناء admin-web في app/index.tsx (useSegments) + app/(tabs)/index.tsx + تسجيل المسار صراحة في Stack بـ app/_layout.tsx (قبل التبويبات).
+- لوحة التحكم القديمة في التطبيق حُذفت نهائيًا: /admin غير مسجّرة في التوجيه، أيقونة الدرع أُزيلت من profile.tsx، وapp/admin.tsx أُزيل.
+- ملاحظة للاستضافة لاحقًا: admin-web حاليًا تقرأ نفس AsyncStorage (محلي على الجهاز نفسه)؛ عند الانتقال للاستضافة ننقل البيانات لسيرفر/DB مشتركة يعمل منها الويب والتطبيقان معًا.
+- المتبقي: pnpm test، checkpoint، تسليم للمستخدم.

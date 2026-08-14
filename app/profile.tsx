@@ -62,7 +62,7 @@ export default function ProfileScreen() {
   return (
     <ScreenContainer edges={["top", "bottom", "left", "right"]}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-        <View style={styles.header}><Pressable accessibilityRole="button" accessibilityLabel="العودة" onPress={() => router.back()} style={({ pressed }) => [styles.back, pressed && styles.pressed]}><MaterialIcons name="arrow-forward" size={23} color="#6B7B3F" /></Pressable><Text style={styles.title}>حسابي</Text><Pressable accessibilityRole="button" accessibilityLabel="لوحة التحكم الإدارية" onPress={() => router.push("/admin" as never)} style={({ pressed }) => [styles.adminShield, pressed && styles.pressed]}><MaterialIcons name="shield" size={20} color="#C9A961" /></Pressable></View>
+        <View style={styles.header}><Pressable accessibilityRole="button" accessibilityLabel="العودة" onPress={() => router.back()} style={({ pressed }) => [styles.back, pressed && styles.pressed]}><MaterialIcons name="arrow-forward" size={23} color="#6B7B3F" /></Pressable><Text style={styles.title}>حسابي</Text></View>
         <Text style={styles.helper}>{setupComplete ? "بيانات حسابك وملفاتك الطبية المسجلة." : "أكمل عنوانك وأضف أفراد العائلة قبل إنشاء الملفات الطبية."}</Text>
 
         <View style={styles.identityCard}>
