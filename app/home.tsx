@@ -28,6 +28,7 @@ type AdSlide = {
 
 const SERVICES: Service[] = [
   { title: "طبيب", icon: "medical-services", tint: "#6B7B3F", surface: "#EFF2E6" },
+  { title: "الاستشارات الطبية", icon: "videocam", tint: "#5B8CA3", surface: "#EAF3F7" },
   { title: "خدمات طبية مساعدة", icon: "medical-services", tint: "#6B7B3F", surface: "#EFF2E6" },
   { title: "صحة نفسية", icon: "psychology", tint: "#8F7D98", surface: "#F2EDF4" },
   { title: "التغذية والصحة والجمال", icon: "restaurant", tint: "#B97E52", surface: "#FBEEE7" },
@@ -54,6 +55,7 @@ const DEFAULT_BOTTOM_AD: AdSlide = {
 
 const SERVICES_TO_CATALOG_KEY: Record<string, string> = {
   "طبيب": "doctor",
+  "الاستشارات الطبية": "consultation",
   "خدمات طبية مساعدة": "assisted",
   "صحة نفسية": "mental-health",
   "التغذية والصحة والجمال": "nutrition",
@@ -120,6 +122,10 @@ export default function HomeScreen() {
   const openService = (serviceName: string) => {
     if (serviceName === "طبيب") {
       router.push("/doctor-specialties" as never);
+      return;
+    }
+    if (serviceName === "الاستشارات الطبية") {
+      router.push("/consultation" as never);
       return;
     }
     if (serviceName === "خدمات طبية مساعدة") {

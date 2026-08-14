@@ -161,6 +161,10 @@ export function getEnabledCities(cities: LibyaCity[]): LibyaCity[] {
   return cities.filter((city) => city.enabled);
 }
 
+export function getDisabledCities(cities: LibyaCity[]): LibyaCity[] {
+  return cities.filter((city) => !city.enabled);
+}
+
 export function getCityById(cities: LibyaCity[], cityId: string): LibyaCity | undefined {
   return cities.find((city) => city.id === cityId);
 }
@@ -190,4 +194,43 @@ export async function setAreaEnabled(cityId: string, areaId: string, enabled: bo
 export function getTripoliAreas(cities: LibyaCity[]): LibyaArea[] {
   const tripoli = cities.find((city) => city.id === TRIPOLI_CITY_ID);
   return tripoli ? tripoli.areas : [];
+}
+
+const AREA_DEMAND_KEY = "tabibi.area_demand.v1";
+
+/** Demand counts for areas (how often users select each area in search scopes). */
+export type AreaDemand = Record<string, number>;
+
+/** Reads stored area demand counts. */
+export async function readAreaDemand(): Promise<AreaDemand> {
+  try {
+    const raw = await AsyncStorage.getItem(AREA_DEMAND_KEY);
+    if (raw) return JSON.parse(raw) as AreaDemand;
+  } catch {
+    // corrupted data — start fresh
+  }
+  return {};
+}
+
+/** Increments the demand count for an area (e.g., when user selects it in a search scope). */
+export async function recordAreaDemand(areaName: string): Promise<void> {
+  if (!areaName.trim()) return;
+  const demand = await readAreaDemand();
+  demand[areaName] = (demand[areaName] ?? 0) + 1;
+  await AsyncStorage.setItem(AREA_DEMAND_KEY, JSON.stringify(demand));
+}
+
+/** Returns areas sorted by demand (most used first); areas without counts keep their original order. */
+export async function getAreasSortedByDemand(areas: string[]): Promise<string[]> {
+  const demand = await readAreaDemand();
+  const unknown = new Set<string>();
+  const sorted = [...areas].sort((a, b) => {
+    const hasA = Object.prototype.hasOwnProperty.call(demand, a);
+    const hasB = Object.prototype.hasOwnProperty.call(demand, b);
+    if (!hasA) unknown.add(a);
+    if (!hasB) unknown.add(b);
+    if (hasA !== hasB) return hasA ? -1 : 1;
+    return (demand[b] ?? 0) - (demand[a] ?? 0);
+  });
+  return sorted;
 }

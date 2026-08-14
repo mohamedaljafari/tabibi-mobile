@@ -7,14 +7,20 @@ import { FormField } from "@/components/form-field";
 import { ScreenContainer } from "@/components/screen-container";
 import { createFamilyMemberDraft, removeFamilyMemberDraft, type FamilyMemberDraft } from "@/lib/account-setup";
 import { completeAccountSetup, getPatientProfile, type PatientProfile } from "@/lib/patient-profile";
+import { getLibyaCities } from "@/lib/libya-cities";
 
 export default function ProfileScreen() {
   const [profile, setProfile] = useState<PatientProfile | null>(null);
+  const [cityNames, setCityNames] = useState<Record<string, string>>({});
   const [familyName, setFamilyName] = useState("");
   const [familyMembers, setFamilyMembers] = useState<FamilyMemberDraft[]>([]);
   const [isCompleting, setIsCompleting] = useState(false);
 
-  const loadProfile = useCallback(async () => setProfile(await getPatientProfile()), []);
+  const loadProfile = useCallback(async () => {
+    setProfile(await getPatientProfile());
+    const cities = await getLibyaCities();
+    setCityNames(Object.fromEntries(cities.map((city) => [city.id, city.name])));
+  }, []);
   useFocusEffect(useCallback(() => { loadProfile(); }, [loadProfile]));
 
   const addFamilyMember = () => {
@@ -68,10 +74,11 @@ export default function ProfileScreen() {
         {profile.addresses.length > 0 ? profile.addresses.map((address) => (
           <View key={address.id} style={styles.addressCard}>
             <View style={styles.addressIcon}><MaterialIcons name="location-on" size={21} color="#C9A961" /></View>
-            <View style={styles.addressText}><Text style={styles.addressLabel}>{address.label}</Text><Text style={styles.addressValue}>{address.addressLabel}</Text></View>
+            <View style={styles.addressText}><Text style={styles.addressLabel}>{address.label}{address.cityId && cityNames[address.cityId] ? ` — ${cityNames[address.cityId]}` : ""}</Text><Text style={styles.addressValue}>{address.addressLabel}{address.areaNames && address.areaNames.length > 0 ? ` — ${address.areaNames.join("، ")}` : ""}</Text></View>
           </View>
         )) : <View style={styles.emptyCard}><MaterialIcons name="location-off" size={22} color="#8A8173" /><Text style={styles.emptyText}>لم تتم إضافة أي عناوين بعد.</Text></View>}
         <Pressable accessibilityRole="button" onPress={() => router.push({ pathname: "/address-picker" as never, params: { label: nextAddressLabel } } as never)} style={({ pressed }) => [styles.addAddress, pressed && styles.pressed]}><MaterialIcons name="add" size={22} color="#6B7B3F" /><Text style={styles.addAddressText}>{profile.addresses.length === 0 ? "إضافة عنوان" : "إضافة عنوان آخر"}</Text></Pressable>
+        <Pressable accessibilityRole="button" onPress={() => router.push("/suggest-city" as never)} style={({ pressed }) => [styles.suggestCityRow, pressed && styles.pressed]}><MaterialIcons name="add-location-alt" size={20} color="#C9A961" /><Text style={styles.suggestCityText}>اقتراح مدينة جديدة غير موجودة بالقائمة</Text><MaterialIcons name="chevron-left" size={18} color="#C9A961" /></Pressable>
 
         {setupComplete ? (
           <View style={styles.recordsSection}>
@@ -118,6 +125,8 @@ const styles = StyleSheet.create({
   emptyText: { color: "#8A8173", fontSize: 13 },
   addAddress: { alignItems: "center", backgroundColor: "#F0EBDD", borderColor: "#D9D1C0", borderRadius: 14, borderStyle: "dashed", borderWidth: 1, flexDirection: "row-reverse", gap: 7, justifyContent: "center", marginTop: 7, minHeight: 42 },
   addAddressText: { color: "#465132", fontSize: 14, fontWeight: "800" },
+  suggestCityRow: { alignItems: "center", backgroundColor: "#F6F2E8", borderRadius: 12, borderWidth: 1, borderColor: "#E4DCCB", flexDirection: "row", gap: 8, justifyContent: "space-between", marginTop: 12, paddingHorizontal: 14, paddingVertical: 13 },
+  suggestCityText: { color: "#6A6256", flex: 1, fontSize: 13, fontWeight: "700", textAlign: "right" },
   familySection: { backgroundColor: "#FFFDF8", borderColor: "#E4DCCB", borderRadius: 18, borderWidth: 1, marginTop: 12, padding: 11 },
   familyCopy: { color: "#8A8173", fontSize: 13, lineHeight: 20, marginTop: 6, textAlign: "right" },
   familyInputRow: { alignItems: "flex-end", flexDirection: "row-reverse", gap: 8, marginTop: 7 },

@@ -149,6 +149,7 @@ export const DEFAULT_SERVICES_CATALOG: ServicesCatalog = {
     { key: "veterinary", title: "طب بيطري", enabled: true },
     { key: "lab", title: "المختبر", enabled: true },
     { key: "pharmacy", title: "الصيدليات", enabled: true },
+    { key: "consultation", title: "الاستشارات الطبية", enabled: true },
     { key: "senior-care", title: "رعاية كبار السن", enabled: true },
     { key: "physio", title: "العلاج الطبيعي", enabled: true },
     { key: "home-care", title: "الرعاية المنزلية", enabled: true },

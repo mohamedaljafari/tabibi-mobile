@@ -55,6 +55,7 @@ import {
   revokeMedicalAccess,
 } from "@/lib/patient-profile";
 import { getEnabledCities, getLibyaCities, setCityEnabled, setAreaEnabled, TRIPOLI_CITY_ID, type LibyaCity } from "@/lib/libya-cities";
+import { readCitySuggestions, markCitySuggestionReviewed, removeCitySuggestion, type CitySuggestion } from "@/lib/city-suggestions";
 
 type AdminTabId = "summary" | "providers" | "ads" | "services" | "requests" | "patients" | "wallets" | "cities";
 
@@ -168,9 +169,12 @@ export default function AdminScreen() {
 
 function CitiesPanel() {
   const [cities, setCities] = useState<LibyaCity[]>([]);
+  const [suggestions, setSuggestions] = useState<CitySuggestion[]>([]);
 
   const load = useCallback(async () => {
-    setCities(await getLibyaCities());
+    const [loadedCities, loadedSuggestions] = await Promise.all([getLibyaCities(), readCitySuggestions()]);
+    setCities(loadedCities);
+    setSuggestions(loadedSuggestions);
   }, []);
 
   useEffect(() => {
@@ -258,6 +262,37 @@ function CitiesPanel() {
           {!city.enabled && city.areas.length > 0 ? (
             <Text style={styles.dimHint}>فعّل المدينة أولًا لإدارة مناطقها.</Text>
           ) : null}
+        </View>
+      ))}
+
+      <View style={styles.panelDivider} />
+      <View style={styles.panelHeaderRow}>
+        <Text style={styles.panelTitle}>اقتراحات المدن ({suggestions.filter((s) => s.status === "pending").length} جديدة)</Text>
+      </View>
+      <Text style={styles.panelHint}>اقتراحات مقدمة من المستخدمين للتوسع إلى مدن غير مفعّلة حاليًا.</Text>
+      {suggestions.length === 0 ? (
+        <Text style={styles.dimHint}>لا توجد اقتراحات حتى الآن.</Text>
+      ) : null}
+      {suggestions.map((suggestion) => (
+        <View key={suggestion.id} style={[styles.card, suggestion.status === "reviewed" && styles.dimCard]}>
+          <View style={styles.cardHeader}>
+            <View style={styles.cardIdentity}>
+              <Text style={styles.cardName}>{suggestion.cityName}</Text>
+              <Text style={styles.cardSubtitle}>
+                {new Date(suggestion.suggestedAt).toLocaleDateString("ar-LY", { year: "numeric", month: "short", day: "numeric" })}
+              </Text>
+            </View>
+            <View style={[styles.badge, { backgroundColor: (suggestion.status === "pending" ? "#A65E67" : "#4E7A3F") + "22", borderColor: (suggestion.status === "pending" ? "#A65E67" : "#4E7A3F") + "66" }]}>
+              <Text style={[styles.badgeText, { color: suggestion.status === "pending" ? "#A65E67" : "#4E7A3F" }]}>
+                {suggestion.status === "pending" ? "بانتظار المراجعة" : "تمت المراجعة"}
+              </Text>
+            </View>
+          </View>
+          <Text style={styles.suggestionReason}>السبب: {suggestion.reason}</Text>
+          <View style={styles.actionRow}>
+            <ActionChip label="تمييز كمراجَع" color="#4E7A3F" disabled={suggestion.status === "reviewed"} onPress={async () => { await markCitySuggestionReviewed(suggestion.id, true); setSuggestions(await readCitySuggestions()); }} />
+            <ActionChip label="حذف" color="#B55448" disabled={false} onPress={async () => { await removeCitySuggestion(suggestion.id); setSuggestions(await readCitySuggestions()); }} />
+          </View>
         </View>
       ))}
     </View>
@@ -1471,4 +1506,6 @@ const styles = StyleSheet.create({
   areaName: { color: "#6A6256", flex: 1, fontSize: 10.5, textAlign: "right" },
   areaToggle: { padding: 4 },
   dimHint: { color: "#A69B88", fontSize: 10, paddingHorizontal: 7, paddingTop: 3 },
+  panelDivider: { borderTopWidth: 1, borderTopColor: "#E4DCCB", marginHorizontal: 10, marginVertical: 10 },
+  suggestionReason: { color: "#6A6256", fontSize: 10.5, lineHeight: 15, paddingHorizontal: 14, paddingTop: 2, textAlign: "right" },
 });

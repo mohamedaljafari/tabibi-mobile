@@ -8,7 +8,7 @@ import * as ImagePicker from "expo-image-picker";
 import { ScreenContainer } from "@/components/screen-container";
 import { getPatientProfile, type PatientAddress, type PatientProfile } from "@/lib/patient-profile";
 import { getPharmacyScopeSummary, type PharmacySearchScope, validatePharmacyQuote } from "@/lib/pharmacy-quote";
-import { getEnabledCities, getLibyaCities, TRIPOLI_CITY_ID } from "@/lib/libya-cities";
+import { getAreasSortedByDemand, getEnabledCities, getLibyaCities, recordAreaDemand, TRIPOLI_CITY_ID } from "@/lib/libya-cities";
 
 export default function PharmacyQuoteScreen() {
   const [profile, setProfile] = useState<PatientProfile | null>(null);
@@ -33,9 +33,18 @@ export default function PharmacyQuoteScreen() {
     });
     getLibyaCities().then((cities) => {
       if (cancelled) return;
-      setEnabledCities(
-        getEnabledCities(cities).map((city) => ({ id: city.id, name: city.name, areas: city.areas.map((area) => area.name) })),
-      );
+      Promise.all(
+        getEnabledCities(cities).map((city) =>
+          getAreasSortedByDemand(city.areas.map((area) => area.name)).then((sorted) => ({
+            id: city.id,
+            name: city.name,
+            areas: sorted,
+          })),
+        ),
+      ).then((sortedCities) => {
+        if (cancelled) return;
+        setEnabledCities(sortedCities);
+      });
     });
     return () => {
       cancelled = true;
@@ -79,6 +88,7 @@ export default function PharmacyQuoteScreen() {
 
   const toggleArea = (area: string) => {
     setSelectedAreas((areas) => areas.includes(area) ? areas.filter((item) => item !== area) : [...areas, area]);
+    void recordAreaDemand(area);
   };
 
   const submitQuoteRequest = () => {
