@@ -35,6 +35,7 @@ import {
   type AdminAdSlide,
   type AdminSummary,
 } from "@/lib/admin";
+import type { ServiceRequest } from "@/lib/service-requests";
 import {
   getWalletSummaries,
   getWalletSummary,
@@ -44,7 +45,7 @@ import {
   type NewWalletEntry,
   type WalletSummary,
 } from "@/lib/wallets";
-import { addWalletEntry } from "@/lib/wallets";
+import { addWalletEntry, readWalletEntries } from "@/lib/wallets";
 import { getPatientProfile, readMedicalAccessGrants, revokeMedicalAccess } from "@/lib/patient-profile";
 import { getEnabledCities, getLibyaCities, setCityEnabled, setAreaEnabled, TRIPOLI_CITY_ID, type LibyaCity } from "@/lib/libya-cities";
 import { readCitySuggestions, markCitySuggestionReviewed, removeCitySuggestion, type CitySuggestion } from "@/lib/city-suggestions";
@@ -58,8 +59,14 @@ import {
   type ExternalConsultationDoctor,
 } from "@/lib/consultation-doctors";
 import type { ProviderAccount } from "@/lib/provider-registry";
+import {
+  providerShareAfterCommission,
+  readPlatformSettings,
+  writePlatformSettings,
+  type PlatformSettings,
+} from "@/lib/platform-settings";
 
-type AdminTabId = "summary" | "providers" | "ads" | "services" | "requests" | "patients" | "wallets" | "cities" | "international";
+type AdminTabId = "summary" | "providers" | "ads" | "services" | "requests" | "patients" | "wallets" | "cities" | "international" | "monthly" | "settings";
 
 const OLIVE = "#6B7B3F";
 const GOLD = "#C9A961";
@@ -160,6 +167,8 @@ const TABS: { id: AdminTabId; title: string; icon: string }[] = [
   { id: "wallets", title: "المحفظات", icon: "💼" },
   { id: "cities", title: "المدن والمناطق", icon: "🏙️" },
   { id: "international", title: "أطباء الخارج", icon: "🌍" },
+  { id: "monthly", title: "التقرير الشهري", icon: "📈" },
+  { id: "settings", title: "الإعدادات العامة", icon: "⚙️" },
 ];
 
 export default function AdminWebScreen() {
@@ -247,6 +256,8 @@ export default function AdminWebScreen() {
           {tab === "wallets" ? <WalletsPanel onRefresh={refresh} /> : null}
           {tab === "cities" ? <CitiesPanel onRefresh={refresh} /> : null}
           {tab === "international" ? <InternationalDoctorsPanel onRefresh={refresh} /> : null}
+          {tab === "monthly" ? <MonthlyReportPanel onRefresh={refresh} /> : null}
+          {tab === "settings" ? <GeneralSettingsPanel onRefresh={refresh} /> : null}
         </main>
       </div>
     </>
@@ -585,6 +596,24 @@ function SummaryPanel({ onRefresh }: { onRefresh: () => void }) {
 
   return (
     <div style={{ display: "grid", gap: 20 }}>
+      {summary.pendingProviders > 0 ? (
+        <div
+          style={{
+            background: "#FDF3DC",
+            border: "1px solid #E8C77E",
+            borderRadius: 12,
+            padding: "14px 18px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+          }}
+        >
+          <div style={{ fontSize: 14, color: "#7A5C1E", fontWeight: 600 }}>
+            🔔 يوجد <strong>{summary.pendingProviders}</strong> حسابًا لمقدم خدمة بانتظار موافقتك. افتح تبويب «مقدمو الخدمة» للمراجعة والتفعيل.
+          </div>
+        </div>
+      ) : null}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
         {stats.map((stat) => (
           <div key={stat.label} style={{ background: "#fff", borderRadius: 12, padding: 20, border: "1px solid #E7E0D2" }}>
@@ -1472,3 +1501,231 @@ const primaryButtonStyle: React.CSSProperties = { padding: "10px 18px", borderRa
 const secondaryButtonStyle: React.CSSProperties = { padding: "10px 18px", borderRadius: 10, border: "1px solid #DDD6C8", background: "#fff", color: "#6A6256", fontSize: 14, fontWeight: 600, cursor: "pointer" };
 const smallButtonStyle: React.CSSProperties = { padding: "6px 12px", borderRadius: 8, border: "1px solid #DDD6C8", background: "#fff", color: "#6A6256", fontSize: 12, fontWeight: 600, cursor: "pointer" };
 const addRowStyle: React.CSSProperties = { display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 10 };
+
+// ══════════════════════ لوحة التقرير الشهري ══════════════════════
+type MonthlyAggregation = {
+  monthLabel: string;
+  completedServices: number;
+  completedConsultations: number;
+  grossRevenue: number;
+  platformCommission: number;
+  providersShare: number;
+  topProviders: { providerName: string; count: number; amount: number }[];
+  completedEntries: { ownerId: string; ownerName: string; amount: number }[];
+};
+
+async function buildMonthlyReport(): Promise<MonthlyAggregation> {
+  const now = new Date();
+  const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const [requests, consultations, entries, settings] = await Promise.all([
+    readAdminRequests(),
+    (async () => {
+      try {
+        const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
+        const raw = await AsyncStorage.getItem("consultation_requests_v1");
+        if (!raw) return [];
+        return JSON.parse(raw) as Array<{ id: string; createdAt: number; status: string; providerName?: string; doctorName?: string; total?: number; type?: string }>;
+      } catch {
+        return [];
+      }
+    })(),
+    readWalletEntries(),
+    readPlatformSettings(),
+  ]);
+
+  const inMonth = (createdAt: number) => {
+    const date = new Date(createdAt);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}` === thisMonth;
+  };
+
+  const completed = requests.filter((request: ServiceRequest) => request.status === "completed").filter((request: ServiceRequest) => inMonth(request.updatedAt));
+  const completedConsultations = consultations.filter((consultation: { id: string; createdAt: number; status: string; total?: number }) => consultation.status === "completed").filter((consultation: { createdAt: number; total?: number }) => inMonth(consultation.createdAt));
+
+  const completedEntries = entries.filter((entry: { role: "patient" | "provider"; type: string; createdAt: number; ownerId: string; ownerName: string; amount: number }) => entry.role === "provider" && entry.type === "earned" && inMonth(entry.createdAt));
+
+  const grossRevenue = completed.reduce((sum: number, request: ServiceRequest) => sum + request.total, 0) + completedConsultations.reduce((sum: number, consultation: { total?: number }) => sum + (consultation.total ?? 0), 0);
+
+  const commissionPercent = settings.platformCommissionPercent;
+  const platformCommission = Math.round(grossRevenue * (commissionPercent / 100) * 100) / 100;
+  const providersShare = Math.round((grossRevenue - platformCommission) * 100) / 100;
+
+  const byProvider = new Map<string, { count: number; amount: number }>();
+  for (const entry of completedEntries) {
+    const current = byProvider.get(entry.ownerId) ?? { count: 0, amount: 0 };
+    byProvider.set(entry.ownerId, {
+      count: current.count + 1,
+      amount: Math.round((current.amount + entry.amount) * 100) / 100,
+    });
+  }
+  const topProviders = Array.from(byProvider.entries())
+    .map(([providerName, stats]) => ({ providerName, ...stats }))
+    .sort((left, right) => right.count - left.count)
+    .slice(0, 5);
+
+  return {
+    monthLabel: now.toLocaleDateString("ar-LY", { month: "long", year: "numeric" }),
+    completedServices: completed.length,
+    completedConsultations: completedConsultations.length,
+    grossRevenue,
+    platformCommission,
+    providersShare,
+    topProviders,
+    completedEntries,
+  };
+}
+
+function MonthlyReportPanel({ onRefresh }: { onRefresh: () => void }) {
+  const [report, setReport] = useState<MonthlyAggregation | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      setReport(await buildMonthlyReport());
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  void onRefresh;
+  void load;
+
+  const statStyle: React.CSSProperties = { flex: 1, minWidth: 160, background: "#fff", borderRadius: 12, padding: 16, border: "1px solid #E7E0D2" };
+  const statValueStyle: React.CSSProperties = { fontSize: 22, fontWeight: 700, color: "#3A3A3A" };
+  const statLabelStyle: React.CSSProperties = { fontSize: 12, color: "#8A8278", marginTop: 4 };
+
+  return (
+    <div style={{ display: "grid", gap: 20 }}>
+      <Card title={`التقرير الشهري — ${report?.monthLabel ?? ""}`}>
+        {loading ? (
+          <div style={{ textAlign: "center", color: "#8A8278", padding: 20 }}>جارٍ تجميع البيانات…</div>
+        ) : !report ? (
+          <div style={{ textAlign: "center", color: "#8A8278", padding: 20 }}>لا توجد بيانات للشهر الحالي.</div>
+        ) : (
+          <>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
+              <div style={statStyle}>
+                <div style={statValueStyle}>{report.completedServices}</div>
+                <div style={statLabelStyle}>خدمة منزلية مكتملة</div>
+              </div>
+              <div style={statStyle}>
+                <div style={statValueStyle}>{report.completedConsultations}</div>
+                <div style={statLabelStyle}>استشارة مكتملة</div>
+              </div>
+              <div style={statStyle}>
+                <div style={statValueStyle}>{report.grossRevenue.toLocaleString("ar-LY")} د.ل</div>
+                <div style={statLabelStyle}>إجمالي المدفوعات</div>
+              </div>
+              <div style={statStyle}>
+                <div style={statValueStyle}>{report.platformCommission.toLocaleString("ar-LY")} د.ل</div>
+                <div style={statLabelStyle}>عمولة المنصة</div>
+              </div>
+              <div style={statStyle}>
+                <div style={statValueStyle}>{report.providersShare.toLocaleString("ar-LY")} د.ل</div>
+                <div style={statLabelStyle}>مستحقات مقدمي الخدمة</div>
+              </div>
+            </div>
+            {report.topProviders.length === 0 ? (
+              <div style={{ marginTop: 16, fontSize: 13, color: "#8A8278", textAlign: "center" }}>
+                لا توجد مستحقات لمقدمي الخدمة خلال هذا الشهر حتى الآن.
+              </div>
+            ) : (
+              <div style={{ marginTop: 16 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "#3A3A3A", marginBottom: 8 }}>أكثر مقدمي الخدمة نشاطًا هذا الشهر</div>
+                <div style={{ display: "grid", gap: 8 }}>
+                  {report.topProviders.map((provider, index) => (
+                    <div key={provider.providerName} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "#F7F4EC", borderRadius: 8, padding: "8px 14px", fontSize: 13 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span style={{ width: 22, height: 22, borderRadius: 11, background: OLIVE, color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700 }}>{index + 1}</span>
+                        <span style={{ fontWeight: 600, color: "#3A3A3A" }}>{provider.providerName}</span>
+                      </div>
+                      <span style={{ color: "#6A6256" }}>{provider.count} عملية — {provider.amount.toLocaleString("ar-LY")} د.ل</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+// ══════════════════════ لوحة الإعدادات العامة ══════════════════════
+function GeneralSettingsPanel({ onRefresh }: { onRefresh: () => void }) {
+  const [settings, setSettings] = useState<PlatformSettings | null>(null);
+  const [commission, setCommission] = useState("");
+  const [discount, setDiscount] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [formError, setFormError] = useState("");
+
+  const load = useCallback(async () => {
+    const current = await readPlatformSettings();
+    setSettings(current);
+    setCommission(String(current.platformCommissionPercent));
+    setDiscount(String(current.defaultOfferDiscountPercent));
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const submit = async () => {
+    setFormError("");
+    const parsedCommission = Number(commission);
+    const parsedDiscount = Number(discount);
+    if (Number.isNaN(parsedCommission) || parsedCommission < 0 || parsedCommission > 100) return setFormError("عمولة المنصة يجب أن تكون بين 0 و 100");
+    if (Number.isNaN(parsedDiscount) || parsedDiscount < 0 || parsedDiscount > 100) return setFormError("نسبة الخصم يجب أن تكون بين 0 و 100");
+
+    setSaving(true);
+    try {
+      const updated = await writePlatformSettings({
+        platformCommissionPercent: parsedCommission,
+        defaultOfferDiscountPercent: parsedDiscount,
+      });
+      setSettings(updated);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+      onRefresh();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const infoStyle: React.CSSProperties = { background: "#F7F4EC", borderRadius: 10, padding: 14, fontSize: 13, color: "#6A6256", marginBottom: 16, border: "1px solid #E7E0D2" };
+
+  return (
+    <div style={{ display: "grid", gap: 20 }}>
+      <Card title="الإعدادات العامة للمنصة" note="هذه الإعدادات تنطبق تلقائيًا على جميع العمليات دون تعديل الكود">
+        <div style={infoStyle}>
+          <strong>عمولة المنصة:</strong> نسبة يُخصمها النظام من كل دفعة يستلمها مقدم الخدمة ويحتفظ بها لحساب المنصة. مثال: عند عمولة 10% ودفع 100 د.ل، يحصل مقدم الخدمة على 90 د.ل وتسجل محفظته بذلك المبلغ.
+          <br />
+          <strong>نسبة الخصم الافتراضية للعروض:</strong> تُطبَّق تلقائيًا على العروض الترويجية عند عدم تحديد نسبة خصم خاصة لكل عرض.
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
+          <Field label="عمولة المنصة (%)" value={commission} onChange={setCommission} type="number" />
+          <Field label="نسبة الخصم الافتراضية للعروض (%)" value={discount} onChange={setDiscount} type="number" />
+        </div>
+        <div style={{ marginTop: 14, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <PrimaryButton label={saving ? "جارٍ الحفظ…" : "حفظ الإعدادات"} onPress={submit} disabled={saving} />
+          {saved ? <span style={{ color: "#4E6B2A", fontSize: 13, fontWeight: 700 }}>✓ تم الحفظ بنجاح</span> : null}
+          {formError ? <span style={{ color: "#B55448", fontSize: 13 }}>{formError}</span> : null}
+        </div>
+        {settings?.updatedAt ? <div style={{ fontSize: 11, color: "#8A8278", marginTop: 8 }}>آخر تحديث: {new Date(settings.updatedAt).toLocaleString("ar-LY")}</div> : null}
+      </Card>
+      <Card title="أثر الإعدادات الحالية">
+        <div style={{ fontSize: 13, color: "#6A6256" }}>
+          عند عمولة {settings?.platformCommissionPercent ?? 0}%، كل 100 د.ل يدفعها المريض يُسجَّل لمقدم الخدمة في محفظته {providerShareAfterCommission(100, settings?.platformCommissionPercent ?? 0).toLocaleString("ar-LY")} د.ل، وتبقى {(100 - providerShareAfterCommission(100, settings?.platformCommissionPercent ?? 0)).toLocaleString("ar-LY")} د.ل لحساب المنصة.
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+

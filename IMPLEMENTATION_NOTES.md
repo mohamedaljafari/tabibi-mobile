@@ -306,3 +306,38 @@ todo.md يحتوي قسم «مرحلة: التحكم اليدوي الكامل �
 لا توجد عناصر تلقائية أخرى تستحق التحويل: قبول الطلبات يتم من الشريك نفسه (وهذا دوره الطبيعي، لا دور الإدارة)، والدردشة تُفتح فقط بعد القبول، وقاعدة الدفع سياسة نظام وليست ميزة تحتاج زر تشغيل.
 
 **الخلاصة**: كل شيء يعمل الآن يدويًا من لوحة التحكم (/admin-web) دون أي تدخل برمجي أو تلقائي. المرحلة مكتملة.
+
+## تنفيذ الاقتراحات الثلاثة (14 أغسطس — بعد طلب المستخدم)
+
+المستخدم طلب تنفيذ ثلاثة اقتراحات: (1) تقرير تقييم شهري في لوحة التحكم، (2) إشعار للإدارة عند تسجيل شريك جديد بانتظار الموافقة، (3) إعدادات عامة في اللوحة (عمولة المنصة + نسب خصم العروض). ثم شرح طريقة استخدام تطبيق الشريك ولوحة التحكم من الملفات المرسلة.
+
+### ما نُفذ حتى الآن:
+1. أُنشئت `lib/platform-settings.ts`: مفتاح `tabibi.platform_settings.v1`، نوع `PlatformSettings { platformCommissionPercent, defaultOfferDiscountPercent, updatedAt }`، دوال read/write + providerShareAfterCommission(gross, percent) مع Clamp 0-100.
+2. عُدّل `app/admin-web.tsx`: AdminTabId أضيف "monthly" و"settings"، TABS أضيف "التقرير الشهري 📈" و"الإعدادات العامة ⚙️".
+
+### المتبقي في admin-web.tsx:
+- عرض التبويبين: `{tab === "monthly" ? <MonthlyReportPanel onRefresh={refresh} /> : null}` و `{tab === "settings" ? <GeneralSettingsPanel onRefresh={refresh} /> : null}` في جسم AdminWebScreen (بعد سطر international).
+- MonthlyReportPanel: قراءة readWalletEntries (lib/wallets) + readAdminRequests + readAdminSummary + تجميع حسب الشهر الحالي (new Date().getMonth())، بطاقة إحصاءات: عدد الطلبات المقبولة/المكتملة، إجمالي المبالغ المدفوعة (entries kind debit مع type payment؟)، أكثر مقدمي الخدمة نشاطًا (حسب entries ownerId role=provider)، عمولة المنصة المحسوبة حسب الإعدادات.
+- GeneralSettingsPanel: قراءة writePlatformSettings + حقول النسبتين + حفظ.
+- إشعار الإدارة: في SummaryPanel (نظرة عامة) إضافة شريط تنبيه أعلى الصفحة عند وجود حسابات shrik pending (readAdminSummary.pendingProviders > 0) بنص «يوجد N حسابًا بانتظار الموافقة» + عداد على تبويب مقدمو الخدمة. الإشعار داخلي في اللوحة (شريط تنبيه أصفر) لأن الإشعارات المحلية require device push ولا تنطبق على الويب؛ يمكن لاحقًا ربطها بـ expo-notifications عند الانتقال للخادم.
+- بعد ذلك: pnpm check + pnpm test (157 حاليًا) + checkpoint + result مع شرح استخدام تطبيق الشريك ولوحة التحكم:
+  * لوحة التحكم: فتح المتصفح → /admin-web → إدخال الرمز (ADMIN_PIN) → 11 تبويبًا.
+  * تطبيق الشريك: مشروع /home/ubuntu/tabibi-partner مرفق بصيغة zip (tabibi-partner-app.zip) وموجودة نسخة GitHub (مستخدم رفعها سابقًا بنفسه — repos: tabibi-mobile + tabibi-partner). التشغيل محليًا: pnpm install ثم pnpm start (Expo) أو فتح Expo Go بمسح QR.
+
+### ملاحظات بنية:
+- admin-web.tsx: SummaryPanel يوجد من قبل (~601)، عناصر Card/Field/PrimaryButton/StatusBadge/Avatar موجودة (~609-721).
+- wallets.ts: readWalletEntries, WalletLedgerEntry {id, ownerId, ownerName, role, kind, type, amount, description, reference, createdAt}, addWalletEntry.
+- admin.ts: readAdminSummary يعيد {pendingProviders, activeProviders, ...}.
+- todo.md: قسم «مرحلة: الاقتراحات الثلاثة» أضيف بـ 4 بنود، لم يُعلَّم بعد.
+
+## تقدم إضافي (الاقتراحات الثلاثة — متابعة)
+
+تم بناء لوحة التقرير الشهري (MonthlyReportPanel) ولوحة الإعدادات العامة (GeneralSettingsPanel) في نهاية admin-web.tsx، مع إضافة "monthly" و"settings" إلى AdminTabId وTABS وعرضهما في AdminWebScreen. TypeScript نظيف (0 أخطاء). اللقطة أكدت ظهور شاشة PIN للوحة التحكم بعد التعديلات (البوابة سليمة).
+
+متبقي:
+1. إشعار الإدارة بشريط تنبيه في SummaryPanel عند وجود مقدمي خدمة pending — يُقرأ من readAdminSummary().pendingProviders ويُعرض شريط أصفر أعلى «نظرة عامة» + شارة عدد على تبويب مقدمو الخدمة في شريط التنقل.
+2. pnpm check + pnpm test (الآن 157).
+3. تعليم todo.md + checkpoint + result مع شرح طريقة استخدام تطبيق الشريك ولوحة التحكم:
+   - لوحة التحكم: من نفس الرابط/النطاق أضف المسار /admin-web في المتصفح، أدخل الرمز الإداري (ADMIN_PIN)، تجد 11 تبويبًا.
+   - تطبيق الشريك: الملفات المرفقة سابقًا (tabibi-partner-app.zip) أو مستودع GitHub tabibi-partner؛ التشغيل: pnpm install ثم pnpm start ومسح QR بـ Expo Go، أو نشر APK من زر Publish.
+4. ملاحظة: شريط التنبيه pending في SummaryPanel — الملف فيه دالة readPendingProvidersAlert أُضيفت في نهاية الملف (غير مستخدمة حاليًا)؛ يمكن إزالتها بعد دمجها في SummaryPanel.
