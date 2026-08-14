@@ -241,8 +241,19 @@ export default function DoctorDetailScreen() {
         recipientId: activeProvider.id,
         role: "provider",
         type: "request_received",
+        channel: "provider_alert",
         title: "طلب خدمة جديد",
         body: `لديك طلب جديد من ${profile.fullName}، راجعه في تبويب الطلبات.`,
+        requestId: request.id,
+        otherPartyName: profile.fullName,
+      });
+      await createNotification({
+        recipientId: "admin",
+        role: "admin",
+        type: "request_received",
+        channel: "admin",
+        title: "طلب خدمة جديد",
+        body: `المريض ${profile.fullName} أرسل طلب خدمة لمقدم الخدمة ${activeProvider.fullName}.`,
         requestId: request.id,
         otherPartyName: profile.fullName,
       });

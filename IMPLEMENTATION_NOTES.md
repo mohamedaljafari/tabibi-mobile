@@ -341,3 +341,100 @@ todo.md يحتوي قسم «مرحلة: التحكم اليدوي الكامل �
    - لوحة التحكم: من نفس الرابط/النطاق أضف المسار /admin-web في المتصفح، أدخل الرمز الإداري (ADMIN_PIN)، تجد 11 تبويبًا.
    - تطبيق الشريك: الملفات المرفقة سابقًا (tabibi-partner-app.zip) أو مستودع GitHub tabibi-partner؛ التشغيل: pnpm install ثم pnpm start ومسح QR بـ Expo Go، أو نشر APK من زر Publish.
 4. ملاحظة: شريط التنبيه pending في SummaryPanel — الملف فيه دالة readPendingProvidersAlert أُضيفت في نهاية الملف (غير مستخدمة حاليًا)؛ يمكن إزالتها بعد دمجها في SummaryPanel.
+
+## تنفيذ الاقتراحات الثلاثة — مركز الإشعارات (14 أغسطس)
+
+المستخدم وافق على تنفيذ الاقتراحات الثلاثة مع التركيز على رقم 3 (الإشعارات). المطلوب: مركز إشعارات في لوحة التحكم يسمح بمتابعة إشعارات المريض، إشعارات دعائية تسويقية، إشعارات «تم» (التأكيدات)، وإشعارات الشريك، مع مفاتيح تشغيل يدوية.
+
+### بنية نظام الإشعارات الحالي:
+- `lib/notifications.ts` في التطبيقين متطابقان تمامًا (diff IDENTICAL): مفتاح `notifications_v1`، أنواع: request_received/request_accepted/request_rejected/chat_message/received_rating/payment_confirmed/earned_wallet_entry/consultation_started/request_completed.
+- مواضع createNotification في تطبيق المريض: lib/consultation-requests.ts (سطر 185)، app/(tabs)/requests.tsx (129)، app/doctor-detail.tsx (240)، app/rate-request.tsx (62).
+- تطبيق الشريك يستخدم import("./notifications") ديناميكي في consultation-requests.ts.
+- الإشعارات ترسل مباشرة للمريض/الشريك فقط — لا يوجد إشعارات إدارية أو دعائية حاليًا.
+
+### الخطة:
+1. توسيع notifications.ts في التطبيقين (نفس التغيير في الاثنين): إضافة roles: "patient" | "provider" | "admin" | "marketing"، وأنواع جديدة: "promo" (دعائي تسويقي)، "done" (تأكيدات تم)، وإضافة channel مفتاح تبديل لكل نوع×متلقٍ عبر مكتبة notification-settings.ts (مفتاح `notification_rules_v1`: قواعد {recipient: string, channel: string, enabled: boolean} + دالة isNotificationAllowed).
+2. إرسال إشعارات «تم» (done) عند تأكيد الطلب وإتمام الخدمة، وإشعارات إدارية للإدارة عند كل حدث مهم (شريك جديد pending، طلب جديد، طلب مكتمل).
+3. تبويب «الإشعارات 📨» في admin-web.tsx: سجل كامل مع فلترة، وأقسام: إشعارات المريض، الإشعارات الدعائية، إشعارات «تم»، إشعارات الشريك، إشعارات الإدارة — مع مفاتيح تشغيل/إيقاف لكل قناة، وإمكانية إرسال إشعار دعائي جديد من اللوحة (يظهر في تطبيق المريض عبر read بفلتر).
+4. سجل نشاط الإدارة: admin-audit-log.ts (مفتاح `admin_audit_log_v1`): كل عملية إدارة تسجل فيها، وتبويب «سجل النشاط» في اللوحة.
+5. تقارير بالفترة: selector شهر في MonthlyReportPanel بدلاً من الشهر الحالي فقط.
+
+### ملاحظة تقنية:
+- تطبيق الشريك في /home/ubuntu/tabibi-partner — نفس التعديلات على lib/notifications.ts يجب تطبيقها فيه يدويًا (الملف متطابق).
+- pnpm test = 157 حاليًا؛ ADMIN_PIN=123456 للاختبارات.
+
+## خريطة مواضع createNotification مع القنوات (بعد توسيع notifications.ts)
+
+أُعيدت كتابة lib/notifications.ts بإضافة: role "admin"|"marketing"، أنواع done/promo/pending_provider/new_request، channel مطلوب (patient_request/provider_alert/done/promo/admin)، دوال isChannelEnabled/readNotificationRules/toggleNotificationChannel.
+
+مواضع تتطلب إضافة channel:
+
+| الملف | القناة | النوع الأصلي |
+|---|---|---|
+| lib/consultation-requests.ts:185 | done | consultation_started |
+| app/(tabs)/requests.tsx:129 | done | request_received (اكتمال) |
+| app/doctor-detail.tsx:240 | provider_alert | request_received |
+| app/rate-request.tsx:62 | provider_alert | received_rating |
+| tests/e2e-service-cycle.test.ts:190,193,228,268,271 | provider_alert للمريض؟ لا: سطر190 شريك=provider_alert، 225 مريض=request_accepted=patient_request، 268 مريض=request_rejected=patient_request، 331 مريض=chat_message=patient_request، 332 شريك=provider_alert | chat_message/accepted/rejected |
+
+ملاحظة: channel يجب اشتقاقه من النوع: accepted/rejected/chat_message مريض → patient_request؛ شريك → provider_alert؛ consultation_started/payment_confirmed/request_completed/earned_wallet_entry → done؛ promo → promo؛ pending_provider/new_request → admin.
+
+إضافة إشعارات الإدارة: عند تسجيل شريك جديد (في provider-auth.ts partner أو عند قراءة اللوحة)، وعند طلب جديد (doctor-detail.tsx:240 + consultation-requests)، وعند طلب مكتمل (requests.tsx:129). recipientId: "admin".
+
+إشعار «تم» (done): عند تأكيد الدفع (payment page) وعند قبول/إتمام الطلب.
+
+تبويب الإشعارات في admin-web.tsx: فلترة حسب channel، عرض أرقام غير المقروءة لكل قسم، مفاتيح تبديل readNotificationRules + toggleNotificationChannel، إرسال إشعار دعائي جديد (يُنشأ type=promo لقائمة المرضى "patients" وrole=marketing).
+
+تطبيق الشريك /home/ubuntu/tabibi-partner: lib/notifications.ts يجب نسخه مطابقًا + lib/consultation-requests.ts:185 يضيف channel: "done".
+
+سجل نشاط الإدارة: مكتبة lib/admin-audit-log.ts بمفتاح `admin_audit_log_v1` {id, action, details, createdAt} + دالة logAdminAction تُستدعى من كل تبديل في admin.ts (toggleProvider/togglePatient/toggleService/toggleAd/setCityEnabled...).
+
+## حالة التنفيذ — مركز الإشعارات (محدّث)
+
+منجز:
+1. lib/notifications.ts أعيدت كتابته: roles patient/provider/admin/marketing + أنواع done/promo/pending_provider/new_request + channel مطلوب + دوال isChannelEnabled/readNotificationRules/toggleNotificationChannel (مفتاح notification_rules_v1).
+2. إضافة channel في: lib/consultation-requests.ts:189 (done)، app/(tabs)/requests.tsx:133 (done)، app/doctor-detail.tsx:244 (provider_alert)، app/rate-request.tsx:66 (provider_alert)، tests/e2e-service-cycle.test.ts (4 مواضع: provider_alert/patient_request).
+3. lib/admin-audit-log.ts جديد: readAuditLog + logAdminAction (مفتاح admin_audit_log_v1، الأحدث أولًا).
+4. lib/admin.ts: logAdminAction في toggleAdminAd/toggleService/addService/updateProviderStatus + إشعار admin عند تغيير حالة الشريك.
+5. lib/libya-cities.ts: logAdminAction في setCityEnabled وsetAreaEnabled (dynamic import).
+6. TypeScript 0 أخطاء حاليًا.
+
+متبقي:
+- إشعارات admin عند: طلب جديد (doctor-detail.tsx + consultation-requests.ts) — أضف createNotification recipientId:"admin" role:"admin" type:"new_request" channel:"admin" في doctor-detail.tsx:249 تقريبًا بعد إشعار الشريك، وفي consultation-requests عند إنشاء طلب (ابحث عن createConsultationRequest أو موضع الطلب في شاشة الاستشارة app/consultations أو doctor-detail للاستشارة).
+- إشعار done عند تأكيد الدفع في app/payment.tsx: readPaymentStatus/setPaymentStatus → أضف إشعار type:"payment_confirmed" channel:"done" للشريك (عند الدفع الإلكتروني) وللإدارة (type new_request? لا — عند تأكيد الدفع إشعار admin بنوع done أيضًا).
+- إشعار pending_provider عند تسجيل شريك جديد: في تطبيق الشريك (provider-auth.ts) بعد إنشاء الحساب يُنشأ إشعار recipientId:"admin" role:"admin" type:"pending_provider" channel:"admin" — أو يمكن إنشاءه عند فتح اللوحة؛ الأفضل عند التسجيل إن أمكن.
+- تطبيق الشريك /home/ubuntu/tabibi-partner: نسخ notifications.ts الجديد + إضافة channel:"done" في lib/consultation-requests.ts:185 + إشعار admin عند التسجيل في provider-auth.ts (إن وُجد موضع إنشاء الحساب).
+- تبويب «الإشعارات 📨» في admin-web.tsx: أقسام (المريض patient_request، الشريك provider_alert، إشعارات «تم» done، الدعائية promo، الإدارة admin) مع مفاتيح toggle + عدادات غير مقروءة + إرسال إشعار دعائي جديد (promo لقائمة المرضى recipientId:"patients" role:"marketing").
+- تبويب «سجل النشاط 📋» في admin-web.tsx: جدول readAuditLog مع التاريخ والوقت.
+- تقارير بالفترة: selector شهر في MonthlyReportPanel — استعلام حسب الشهر المختار بدل الشهر الحالي.
+- بعد ذلك: pnpm test (ADMIN_PIN=123456)، نسخة متطابقة للـ partner، checkpoint.
+
+## مركز الإشعارات — تقدم (محدّث 08:54)
+
+منجز بالكامل:
+- notifications.ts (التطبيقين): roles patient/provider/admin/marketing + channels patient_request/provider_alert/done/promo/admin + isChannelEnabled/readNotificationRules/toggleNotificationChannel + createNotification يحترم القناة.
+- كل مواضع createNotification في tabibi-mobile لها channel: consultation-requests:189 (done)، requests.tsx:133 (done)، doctor-detail.tsx:244 (provider_alert) + إشعار admin عند الطلب الجديد (request_received/admin)، rate-request.tsx:66 (provider_alert)، payment.tsx:132 (done) + إشعار admin، consultation-payment.tsx:121 (done) + إشعار admin، consultation-results.tsx:154 (إشعار admin عند طلب الاستشارة).
+- tabibi-partner: notifications.ts منسوخة + requests.tsx channel عند القبول/الرفض (patient_request) واكتمال الاستشارة (done) + consultation-requests.ts:189 (done للمريض + admin) + provider-auth.ts:278 إشعار admin بنوع pending_provider عند التسجيل.
+- الاختبارات في التطبيقين: كل مواضع createNotification لها channel. TypeScript 0 أخطاء في المشروعين.
+- lib/notifications-admin.ts جديد في tabibi-mobile: readAdminNotifications/readPatientNotifications/readProviderNotifications/readMarketingNotifications/countUnreadByRole/countUnreadByChannel/markAdminNotificationRead/markAllNotificationsRead/deleteAdminNotification/createPromoNotification.
+
+متبقي:
+1. تبويب «الإشعارات 📨» في app/admin-web.tsx: 5 أقسام (إدارة admin، المريض patient_request، الشريك provider_alert، «تم» done، الدعائية promo مع عدّادات غير مقروءة + مفتاح toggle لكل قناة + إرسال دعائي جديد عبر createPromoNotification + حذف إشعار).
+2. تبويب «سجل النشاط 📋» في admin-web.tsx: يستورد readAuditLog وlogAdminAction من lib/admin-audit-log.ts مع التاريخ.
+3. تقارير بالفترة: selector شهر في MonthlyReportPanel (استعلام حسب الشهر).
+4. pnpm test (ADMIN_PIN=123456) ثم checkpoint.
+
+ملاحظة UI: التبويبات الحالية في admin-web.tsx: نظرة عامة، مقدمو الخدمة، الإعلانات، الخدمات، الطلبات، المرضى، المحفظات، المدن والمناطق، أطباء الخارج، التقرير الشهري، الإعدادات العامة (9 أقسام + تبويبان جديدان قادمان). لوحة التحكم محمية بـ PIN (isValidAdminPin من lib/admin-auth.ts، متغير ADMIN_PIN env).
+- عنوان اللوحة: /admin-web في نفس المشروع (tabibi-mobile).
+- تطبيق الشريك: /home/ubuntu/tabibi-partner (مشروع مستقل، رفع GitHub منفصل).
+
+## تحديث المركز (08:56)
+
+كل البنود الثلاثة منفذة في الكود:
+- منتقي الشهر في MonthlyReportPanel: buildMonthlyReport(monthKey?) + monthKeyFor + buildMonthOptions (12 شهرًا آخرها الحالي) + select في رأس البطاقة. TypeScript 0 أخطاء.
+- تبويبا NotificationsCenterPanel وAuditLogPanel أُضيفا إلى AdminTabId وTABS ({id: notifications, title: مركز الإشعارات, icon: 📨}, {id: audit, title: سجل نشاط الإدارة, icon: 📋}) والتبديل في الجسم، والاستيرادات من lib/notifications-admin.ts وlib/notifications.ts وlib/admin-audit-log.ts.
+- مركز الإشعارات: 5 أقسام (admin/provider_alert/patient_request/done/promo) مع عدّادات غير مقروءة، مفتاح تشغيل/إيقاف لكل قناة، تعليم مقروء/حذف، ونموذج إرسال دعائي عبر createPromoNotification.
+- سجل النشاط: يعرض readAuditLog معكوسًا.
+
+متبقي: pnpm test (ADMIN_PIN=123456pnpm run test) ثم نقطة تحقق وتسليم للمستخدم مع شرح استخدام تطبيق الشريك ولوحة التحكم.
+- نقطة التحقق السابقة: c191989f.

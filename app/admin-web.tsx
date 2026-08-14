@@ -60,13 +60,33 @@ import {
 } from "@/lib/consultation-doctors";
 import type { ProviderAccount } from "@/lib/provider-registry";
 import {
+  countUnreadByChannel,
+  countUnreadByRole,
+  createPromoNotification,
+  deleteAdminNotification,
+  markAllNotificationsRead,
+  markAdminNotificationRead,
+  readAdminNotifications,
+  readMarketingNotifications,
+  readPatientNotifications,
+  readProviderNotifications,
+} from "@/lib/notifications-admin";
+import {
+  readNotificationRules,
+  readNotifications,
+  toggleNotificationChannel,
+  type Notification,
+  type NotificationChannel,
+} from "@/lib/notifications";
+import { readAuditLog, type AuditLogEntry } from "@/lib/admin-audit-log";
+import {
   providerShareAfterCommission,
   readPlatformSettings,
   writePlatformSettings,
   type PlatformSettings,
 } from "@/lib/platform-settings";
 
-type AdminTabId = "summary" | "providers" | "ads" | "services" | "requests" | "patients" | "wallets" | "cities" | "international" | "monthly" | "settings";
+type AdminTabId = "summary" | "providers" | "ads" | "services" | "requests" | "patients" | "wallets" | "cities" | "international" | "monthly" | "notifications" | "audit" | "settings";
 
 const OLIVE = "#6B7B3F";
 const GOLD = "#C9A961";
@@ -168,6 +188,8 @@ const TABS: { id: AdminTabId; title: string; icon: string }[] = [
   { id: "cities", title: "المدن والمناطق", icon: "🏙️" },
   { id: "international", title: "أطباء الخارج", icon: "🌍" },
   { id: "monthly", title: "التقرير الشهري", icon: "📈" },
+  { id: "notifications", title: "مركز الإشعارات", icon: "📨" },
+  { id: "audit", title: "سجل نشاط الإدارة", icon: "📋" },
   { id: "settings", title: "الإعدادات العامة", icon: "⚙️" },
 ];
 
@@ -257,6 +279,8 @@ export default function AdminWebScreen() {
           {tab === "cities" ? <CitiesPanel onRefresh={refresh} /> : null}
           {tab === "international" ? <InternationalDoctorsPanel onRefresh={refresh} /> : null}
           {tab === "monthly" ? <MonthlyReportPanel onRefresh={refresh} /> : null}
+          {tab === "notifications" ? <NotificationsCenterPanel onRefresh={refresh} /> : null}
+          {tab === "audit" ? <AuditLogPanel onRefresh={refresh} /> : null}
           {tab === "settings" ? <GeneralSettingsPanel onRefresh={refresh} /> : null}
         </main>
       </div>
@@ -1514,9 +1538,13 @@ type MonthlyAggregation = {
   completedEntries: { ownerId: string; ownerName: string; amount: number }[];
 };
 
-async function buildMonthlyReport(): Promise<MonthlyAggregation> {
+async function buildMonthlyReport(monthKey?: string): Promise<MonthlyAggregation> {
   const now = new Date();
-  const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const thisMonth = monthKey ?? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const reportDate = monthKey ? (() => {
+    const [year, month] = monthKey.split("-").map(Number);
+    return new Date(year, month - 1, 1);
+  })() : now;
   const [requests, consultations, entries, settings] = await Promise.all([
     readAdminRequests(),
     (async () => {
@@ -1563,7 +1591,7 @@ async function buildMonthlyReport(): Promise<MonthlyAggregation> {
     .slice(0, 5);
 
   return {
-    monthLabel: now.toLocaleDateString("ar-LY", { month: "long", year: "numeric" }),
+    monthLabel: reportDate.toLocaleDateString("ar-LY", { month: "long", year: "numeric" }),
     completedServices: completed.length,
     completedConsultations: completedConsultations.length,
     grossRevenue,
@@ -1574,22 +1602,39 @@ async function buildMonthlyReport(): Promise<MonthlyAggregation> {
   };
 }
 
+function monthKeyFor(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function buildMonthOptions(): { key: string; label: string }[] {
+  const options: { key: string; label: string }[] = [];
+  const now = new Date();
+  const monthNames = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
+  for (let offset = 0; offset < 12; offset += 1) {
+    const date = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+    options.push({ key: monthKeyFor(date), label: `${monthNames[date.getMonth()]} ${date.getFullYear()}` });
+  }
+  return options;
+}
+
 function MonthlyReportPanel({ onRefresh }: { onRefresh: () => void }) {
   const [report, setReport] = useState<MonthlyAggregation | null>(null);
   const [loading, setLoading] = useState(true);
+  const [selectedMonth, setSelectedMonth] = useState<string>(monthKeyFor(new Date()));
+  const [monthOptions] = useState(() => buildMonthOptions());
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (key: string) => {
     setLoading(true);
     try {
-      setReport(await buildMonthlyReport());
+      setReport(await buildMonthlyReport(key));
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    load(selectedMonth);
+  }, [selectedMonth, load]);
 
   void onRefresh;
   void load;
@@ -1601,6 +1646,18 @@ function MonthlyReportPanel({ onRefresh }: { onRefresh: () => void }) {
   return (
     <div style={{ display: "grid", gap: 20 }}>
       <Card title={`التقرير الشهري — ${report?.monthLabel ?? ""}`}>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 14, flexWrap: "wrap" }}>
+          <label style={{ fontSize: 13, fontWeight: 700, color: "#6A6256" }}>عرض شهر:</label>
+          <select
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(e.target.value)}
+            style={{ fontSize: 13, padding: "6px 10px", borderRadius: 8, border: "1px solid #E7E0D2", background: "#fff", color: "#3A3A3A" }}
+          >
+            {monthOptions.map((option) => (
+              <option key={option.key} value={option.key}>{option.label}</option>
+            ))}
+          </select>
+        </div>
         {loading ? (
           <div style={{ textAlign: "center", color: "#8A8278", padding: 20 }}>جارٍ تجميع البيانات…</div>
         ) : !report ? (
@@ -1729,3 +1786,244 @@ function GeneralSettingsPanel({ onRefresh }: { onRefresh: () => void }) {
 }
 
 
+
+// ══════════════════════ لوحة مركز الإشعارات ══════════════════════
+const NOTIFICATION_SECTIONS: { channel: NotificationChannel; role: "patient" | "provider" | "admin" | "marketing"; title: string; icon: string; description: string }[] = [
+  { channel: "admin", role: "admin", title: "إشعارات الإدارة", icon: "🛡️", description: "حسابات شريك جديدة بانتظار الموافقة، طلبات جديدة، وتعديلات يدوية في النظام" },
+  { channel: "patient_request", role: "patient", title: "إشعارات المريض", icon: "🧑‍⚕️", description: "قبول ورفض طلبات المريض والرسائل الواردة إليه من مقدمي الخدمة" },
+  { channel: "provider_alert", role: "provider", title: "إشعارات الشريك", icon: "👨‍⚕️", description: "طلبات الخدمة الجديدة والرسائل والتنبيهات التي تصل مقدمي الخدمة" },
+  { channel: "done", role: "patient", title: "إشعارات «تم»", icon: "✅", description: "تأكيد الدفع، إتمام الخدمة، وتأكيد بدء الاستشارة" },
+  { channel: "promo", role: "marketing", title: "الإشعارات الدعائية التسويقية", icon: "📣", description: "العروض والإعلانات الدعائية التي ترسلها الإدارة لعموم المرضى" },
+];
+
+function NotificationsCenterPanel({ onRefresh }: { onRefresh: () => void }) {
+  const [sections, setSections] = useState<Record<string, { notifications: Notification[]; unread: number }>>({});
+  const [rules, setRules] = useState<Record<string, { enabled: boolean }>>({});
+  const [channelUnread, setChannelUnread] = useState<Record<string, number>>({});
+  const [loading, setLoading] = useState(true);
+  const [promoTitle, setPromoTitle] = useState("");
+  const [promoBody, setPromoBody] = useState("");
+  const [promoSending, setPromoSending] = useState(false);
+  const [promoSent, setPromoSent] = useState(false);
+  const [channelToggling, setChannelToggling] = useState<string>("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [patientNotifications, providerNotifications, adminNotifications, marketingNotifications, currentRules, ...unreads] = await Promise.all([
+        readPatientNotifications(),
+        readProviderNotifications(),
+        readAdminNotifications(),
+        readMarketingNotifications(),
+        readNotificationRules(),
+        countUnreadByChannel("admin"),
+        countUnreadByChannel("patient_request"),
+        countUnreadByChannel("provider_alert"),
+        countUnreadByChannel("done"),
+        countUnreadByChannel("promo"),
+      ]);
+      setSections({
+        patient_request: { notifications: patientNotifications, unread: unreads[0] },
+        provider_alert: { notifications: providerNotifications, unread: unreads[1] },
+        admin: { notifications: adminNotifications, unread: unreads[2] },
+        done: { notifications: [], unread: unreads[3] },
+        promo: { notifications: marketingNotifications, unread: unreads[4] },
+      });
+      setRules(currentRules as Record<string, { enabled: boolean }>);
+      setChannelUnread({ admin: unreads[0], patient_request: unreads[0], provider_alert: unreads[1], done: unreads[3], promo: unreads[4] });
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  void onRefresh;
+  void load;
+
+  const toggleChannel = async (channel: NotificationChannel) => {
+    setChannelToggling(channel);
+    try {
+      const next = await toggleNotificationChannel(channel);
+      setRules(next as unknown as Record<string, { enabled: boolean }>);
+      onRefresh();
+    } finally {
+      setChannelToggling("");
+    }
+  };
+
+  const handleMarkRead = async (id: string) => {
+    await markAdminNotificationRead(id);
+    await load();
+  };
+
+  const handleMarkAllRead = async () => {
+    await markAllNotificationsRead();
+    await load();
+    onRefresh();
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("هل تريد حذف هذا الإشعار نهائيًا؟")) return;
+    await deleteAdminNotification(id);
+    await load();
+    onRefresh();
+  };
+
+  const sendPromo = async () => {
+    if (!promoTitle.trim() || !promoBody.trim()) return;
+    setPromoSending(true);
+    try {
+      const result = await createPromoNotification({ title: promoTitle.trim(), body: promoBody.trim() });
+      setPromoSent(Boolean(result));
+      if (result) {
+        setPromoTitle("");
+        setPromoBody("");
+        setTimeout(() => setPromoSent(false), 3000);
+      }
+      await load();
+    } finally {
+      setPromoSending(false);
+    }
+  };
+
+  const cardStyle: React.CSSProperties = { background: "#fff", borderRadius: 12, padding: 18, border: "1px solid #E7E0D2" };
+  const notifRow: React.CSSProperties = { display: "flex", alignItems: "center", gap: 10, padding: "8px 4px", borderBottom: "1px solid #F1EDE3", fontSize: 13 };
+
+  return (
+    <div style={{ display: "grid", gap: 20 }}>
+      <Card title="مركز الإشعارات" note="قنوات التبديل تحدد وصول الإشعارات: عند الإيقاف لا يصل الإشعار جديد للقناة المعنية حتى إعادة تشغيلها">
+        {loading ? (
+          <div style={{ textAlign: "center", color: "#8A8278", padding: 20 }}>جارٍ تحميل الإشعارات…</div>
+        ) : (
+          <>
+            <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 14, flexWrap: "wrap" }}>
+              <button
+                onClick={handleMarkAllRead}
+                style={{ fontSize: 13, padding: "7px 14px", borderRadius: 8, border: "1px solid #E7E0D2", background: "#F7F4EC", color: "#6A6256", cursor: "pointer" }}
+              >
+                تعليم الكل كمقروءة
+              </button>
+            </div>
+            {NOTIFICATION_SECTIONS.map((section) => {
+              const sectionData = sections[section.channel] ?? { notifications: [], unread: channelUnread[section.channel] ?? 0 };
+              const enabled = rules[section.channel]?.enabled ?? true;
+              return (
+                <div key={section.channel} style={{ ...cardStyle, marginBottom: 14 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 16 }}>{section.icon}</span>
+                      <span style={{ fontWeight: 700, color: "#3A3A3A", fontSize: 14 }}>{section.title}</span>
+                      {sectionData.unread > 0 ? (
+                        <span style={{ background: "#B55448", color: "#fff", borderRadius: 10, padding: "2px 8px", fontSize: 11, fontWeight: 700 }}>{sectionData.unread} غير مقروءة</span>
+                      ) : null}
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 12, color: enabled ? "#4E6B2A" : "#B55448", fontWeight: 700 }}>{enabled ? "مفعّلة" : "متوقفة"}</span>
+                      <button
+                        onClick={() => toggleChannel(section.channel)}
+                        disabled={channelToggling === section.channel}
+                        style={{ fontSize: 12, padding: "5px 12px", borderRadius: 8, border: "none", background: enabled ? "#B55448" : OLIVE, color: "#fff", cursor: "pointer", fontWeight: 700 }}
+                      >
+                        {channelToggling === section.channel ? "جارٍ…" : enabled ? "إيقاف" : "تشغيل"}
+                      </button>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 12, color: "#8A8278", marginBottom: 8 }}>{section.description}</div>
+                  {sectionData.notifications.length === 0 ? (
+                    <div style={{ fontSize: 12, color: "#8A8278" }}>لا توجد إشعارات حتى الآن.</div>
+                  ) : (
+                    <div style={{ maxHeight: 280, overflowY: "auto" }}>
+                      {sectionData.notifications.slice(0, 20).map((notification) => (
+                        <div key={notification.id} style={{ ...notifRow, opacity: notification.read ? 0.65 : 1 }}>
+                          {!notification.read ? <span style={{ width: 7, height: 7, borderRadius: 4, background: OLIVE, flexShrink: 0 }} /> : null}
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 600, color: "#3A3A3A" }}>{notification.title}</div>
+                            <div style={{ color: "#8A8278", fontSize: 12 }}>{notification.body}</div>
+                            <div style={{ color: "#B0A898", fontSize: 11 }}>{new Date(notification.createdAt).toLocaleString("ar-LY")}</div>
+                          </div>
+                          <button onClick={() => handleMarkRead(notification.id)} title="تعليم كمقروء" style={{ fontSize: 11, padding: "4px 8px", borderRadius: 6, border: "1px solid #E7E0D2", background: "#fff", color: "#6A6256", cursor: "pointer" }}>مقروء</button>
+                          <button onClick={() => handleDelete(notification.id)} title="حذف" style={{ fontSize: 11, padding: "4px 8px", borderRadius: 6, border: "1px solid #E7E0D2", background: "#fff", color: "#B55448", cursor: "pointer" }}>حذف</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            <div style={cardStyle}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                <span style={{ fontSize: 16 }}>📣</span>
+                <span style={{ fontWeight: 700, color: "#3A3A3A", fontSize: 14 }}>إرسال إشعار دعائي تسويقي جديد</span>
+              </div>
+              <div style={{ fontSize: 12, color: "#8A8278", marginBottom: 10 }}>يظهر لكل المرضى في الصفحة الرئيسية. لا يُرسل إذا كانت قناة «الدعائية» متوقفة.</div>
+              <div style={{ display: "grid", gap: 8, marginBottom: 10 }}>
+                <input value={promoTitle} onChange={(e) => setPromoTitle(e.target.value)} placeholder="عنوان الإعلان" style={{ fontSize: 13, padding: 9, borderRadius: 8, border: "1px solid #E7E0D2" }} />
+                <textarea value={promoBody} onChange={(e) => setPromoBody(e.target.value)} placeholder="نص الإعلان الدعائي" rows={3} style={{ fontSize: 13, padding: 9, borderRadius: 8, border: "1px solid #E7E0D2", fontFamily: "inherit" }} />
+              </div>
+              <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                <button onClick={sendPromo} disabled={promoSending || !promoTitle.trim() || !promoBody.trim()} style={{ fontSize: 13, padding: "8px 16px", borderRadius: 8, border: "none", background: promoSending ? "#C4BBA6" : OLIVE, color: "#fff", cursor: promoSending ? "wait" : "pointer", fontWeight: 700 }}>
+                  {promoSending ? "جارٍ الإرسال…" : "إرسال الدعائي"}
+                </button>
+                {promoSent ? <span style={{ color: "#4E6B2A", fontSize: 13, fontWeight: 700 }}>✓ أُرسل بنجاح</span> : null}
+                {(rules.promo?.enabled ?? true) === false ? <span style={{ color: "#B55448", fontSize: 12 }}>⚠ قناة الدعائية متوقفة، لن يصل الإشعار حتى إعادة تشغيلها</span> : null}
+              </div>
+            </div>
+          </>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+// ══════════════════════ لوحة سجل نشاط الإدارة ══════════════════════
+function AuditLogPanel({ onRefresh }: { onRefresh: () => void }) {
+  const [entries, setEntries] = useState<AuditLogEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const log = await readAuditLog();
+      setEntries(log.slice().reverse());
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  void onRefresh;
+  void load;
+
+  const rowStyle: React.CSSProperties = { display: "flex", alignItems: "center", gap: 12, padding: "9px 4px", borderBottom: "1px solid #F1EDE3", fontSize: 13 };
+
+  return (
+    <div style={{ display: "grid", gap: 20 }}>
+      <Card title="سجل نشاط الإدارة" note="كل إجراء يدوي تنفذه الإدارة يُسجَّل هنا تلقائيًا مع التاريخ والوقت للتتبع والمساءلة">
+        {loading ? (
+          <div style={{ textAlign: "center", color: "#8A8278", padding: 20 }}>جارٍ تحميل السجل…</div>
+        ) : entries.length === 0 ? (
+          <div style={{ textAlign: "center", color: "#8A8278", padding: 20 }}>لا توجد إجراءات مسجلة بعد. أي تفعيل أو إيقاف أو تعديل من هذه اللوحة سيظهر هنا.</div>
+        ) : (
+          <div style={{ maxHeight: 520, overflowY: "auto" }}>
+            {entries.map((entry) => (
+              <div key={entry.id} style={rowStyle}>
+                <span style={{ fontSize: 16, flexShrink: 0 }}>📌</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, color: "#3A3A3A" }}>{entry.action}</div>
+                  {entry.details ? <div style={{ color: "#8A8278", fontSize: 12 }}>{entry.details}</div> : null}
+                </div>
+                <div style={{ color: "#B0A898", fontSize: 11, flexShrink: 0 }}>{new Date(entry.createdAt).toLocaleString("ar-LY")}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}

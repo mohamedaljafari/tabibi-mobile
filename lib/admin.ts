@@ -13,6 +13,8 @@ import { SERVICE_REQUESTS_KEY, type ServiceRequest } from "./service-requests";
 import { RATINGS_KEY, type ProviderRating } from "./ratings";
 import { MEDICAL_ACCESS_KEY } from "./patient-profile";
 import { CHAT_THREADS_KEY } from "./chat";
+import { logAdminAction } from "./admin-audit-log";
+import { createNotification } from "./notifications";
 
 export const ADMINS_STORAGE_KEY = "tabibi.admin.ads.v1";
 export const SERVICES_CATALOG_KEY = "tabibi.admin.services.v1";
@@ -90,8 +92,13 @@ export async function deleteAdminAd(id: string): Promise<AdminAdSlide[]> {
 
 export async function toggleAdminAd(id: string, enabled: boolean): Promise<AdminAdSlide[]> {
   const all = await readAdminAds();
+  const target = all.find((item) => item.id === id);
   const next = all.map((item) => (item.id === id ? { ...item, enabled } : item));
   await writeJson(ADMINS_STORAGE_KEY, next);
+  void logAdminAction({
+    action: `${enabled ? "تفعيل" : "إيقاف"} إعلان: ${target?.title ?? id}`,
+    details: `الموقع: ${target?.position ?? "—"}`,
+  });
   return next;
 }
 
@@ -167,9 +174,13 @@ export async function writeServicesCatalog(catalog: ServicesCatalog): Promise<Se
 
 export async function toggleService(key: string, enabled: boolean): Promise<ServicesCatalog> {
   const catalog = await readServicesCatalog();
+  const target = catalog.services.find((service) => service.key === key);
   catalog.services = catalog.services.map((service) =>
     service.key === key ? { ...service, enabled } : service,
   );
+  void logAdminAction({
+    action: `${enabled ? "تفعيل" : "إيقاف"} خدمة: ${target?.title ?? key}`,
+  });
   return writeServicesCatalog(catalog);
 }
 
@@ -179,6 +190,7 @@ export async function addService(title: string): Promise<ServicesCatalog> {
   if (!key) return catalog;
   if (catalog.services.some((service) => service.key === key)) return catalog;
   catalog.services.push({ key, title: title.trim(), enabled: true });
+  void logAdminAction({ action: `إضافة خدمة جديدة: ${title.trim()}` });
   return writeServicesCatalog(catalog);
 }
 
@@ -195,8 +207,25 @@ export async function updateProviderStatus(
   status: AdminAccountStatus,
 ): Promise<ProviderAccount[]> {
   const accounts = await readAdminProviderAccounts();
+  const target = accounts.find((account) => account.id === id);
   const next = accounts.map((account) => (account.id === id ? { ...account, status } : account));
   await writeJson(PROVIDER_ACCOUNTS_KEY, next);
+  const label =
+    status === "active" ? "تفعيل" : status === "pending" ? "إرجاع لبانتظار الموافقة" : status === "frozen" ? "تجميد" : "إلغاء";
+  void logAdminAction({
+    action: `${label} حساب الشريك: ${target?.fullName ?? id}`,
+    details: `الحالة من «${target?.status ?? "—"}» إلى «${status}»`,
+  });
+  if (target && target.fullName) {
+    void createNotification({
+      recipientId: "admin",
+      role: "admin",
+      type: "pending_provider",
+      channel: "admin",
+      title: `${label} حساب شريك`,
+      body: `${label} المدير حساب الشريك «${target.fullName}» ليصبح «${status}».`,
+    });
+  }
   return next;
 }
 

@@ -191,6 +191,7 @@ describe("الدورة الكاملة للخدمة بين المريض ومقد�
       recipientId: providerId,
       role: "provider",
       type: "request_received",
+      channel: "provider_alert",
       title: "طلب خدمة جديد",
       body: "كشف منزلي + قياس ضغط وسكر — الإجمالي 270",
       requestId: request.id,
@@ -226,6 +227,7 @@ describe("الدورة الكاملة للخدمة بين المريض ومقد�
       recipientId: PATIENT_ID,
       role: "patient",
       type: "request_accepted",
+      channel: "patient_request",
       title: "تم قبول طلبك",
       body: "سأصل إليك خلال ساعة",
       requestId: request.id,
@@ -269,6 +271,7 @@ describe("الدورة الكاملة للخدمة بين المريض ومقد�
       recipientId: PATIENT_ID,
       role: "patient",
       type: "request_rejected",
+      channel: "patient_request",
       title: "رُفض طلبك",
       body: "غير متاح حاليًا",
       requestId: request.id,
@@ -328,8 +331,8 @@ describe("الدورة الكاملة للخدمة بين المريض ومقد�
     expect(messages[2].text).toContain("الانتظار");
 
     // إشعار الرسالة الجديدة (ينشئه التطبيق عند إرسال كل رسالة)
-    await createNotification({ recipientId: PATIENT_ID, role: "patient", type: "chat_message", title: "رسالة جديدة", body: "وعليكم السلام، خلال 45 دقيقة", requestId: thread.threadId, otherPartyName: "د. أحمد رائد" });
-    await createNotification({ recipientId: providerId, role: "provider", type: "chat_message", title: "رسالة جديدة", body: "تمام، في الانتظار", requestId: thread.threadId, otherPartyName: PATIENT_NAME });
+    await createNotification({ recipientId: PATIENT_ID, role: "patient", type: "chat_message", channel: "patient_request", title: "رسالة جديدة", body: "وعليكم السلام، خلال 45 دقيقة", requestId: thread.threadId, otherPartyName: "د. أحمد رائد" });
+    await createNotification({ recipientId: providerId, role: "provider", type: "chat_message", channel: "provider_alert", title: "رسالة جديدة", body: "تمام، في الانتظار", requestId: thread.threadId, otherPartyName: PATIENT_NAME });
     const patientNotifs = await readRecipientNotifications(PATIENT_ID);
     expect(patientNotifs.some((notification: { type?: string }) => notification.type === "chat_message")).toBe(true);
     const providerNotifs = await readProviderNotifications(providerId);

@@ -42,6 +42,7 @@ import {
 } from "@/lib/consultation-doctors";
 import { getPatientProfile } from "@/lib/patient-profile";
 import { createConsultationRequest, type ConsultationMode } from "@/lib/consultation-requests";
+import { createNotification } from "@/lib/notifications";
 
 
 type SortKey = "nearest" | "rating" | "price-low" | "price-high";
@@ -150,6 +151,16 @@ export default function ConsultationResultsScreen() {
         price,
       });
       setSending(false);
+      await createNotification({
+        recipientId: "admin",
+        role: "admin",
+        type: "request_received",
+        channel: "admin",
+        title: "طلب استشارة جديد",
+        body: `المريض ${profile.fullName} أرسل طلب استشارة ${specializationLabel} للطبيب ${doctorName}.`,
+        requestId: request.id,
+        otherPartyName: profile.fullName,
+      });
       router.push({
         pathname: "/consultation-payment" as never,
         params: { requestId: request.id, doctorName } as never,

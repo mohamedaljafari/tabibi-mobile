@@ -130,6 +130,7 @@ export default function RequestsScreen() {
                 recipientId: item.providerId,
                 role: "provider",
                 type: "request_received",
+                channel: "done",
                 title: "اكتملت الخدمة",
                 body: `أتم المريض ${profile.fullName} الخدمة «${item.services.map((service) => service.serviceName).join("، ")}» بمبلغ ${item.total} د.ل، وسيُقيّمها قريبًا.`,
                 requestId: item.id,

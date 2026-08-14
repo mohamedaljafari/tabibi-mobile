@@ -17,6 +17,7 @@ import { ScreenContainer } from "@/components/screen-container";
 import { readPatientRequests } from "@/lib/service-requests";
 import { getPatientProfile } from "@/lib/patient-profile";
 import { addWalletEntry, type LedgerEntryType } from "@/lib/wallets";
+import { createNotification } from "@/lib/notifications";
 
 type PaymentMethodParam = "cash" | "electronic";
 
@@ -129,21 +130,26 @@ export default function PaymentScreen() {
           amount: total || request.total,
           description: `مستحق له: ${paymentLabel(paymentMethod)}`,
         });
-        const notificationsRaw = (await AsyncStorage.getItem("notifications_v1")) ?? "[]";
-        const notifications = JSON.parse(notificationsRaw) as Array<Record<string, unknown>>;
-        notifications.push({
-          id: `notif_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
-          createdAt: Date.now(),
-          read: false,
+        await createNotification({
           recipientId: request.providerId,
           role: "provider",
           type: "payment_confirmed",
+          channel: "done",
           title: "تأكيد الدفع",
           body: `تم تأكيد الدفع من ${profile.fullName}، يمكنك البدء بالتوجه إلى العميل.`,
-          requestId,
+          requestId: requestId ?? undefined,
           otherPartyName: profile.fullName,
         });
-        await AsyncStorage.setItem("notifications_v1", JSON.stringify(notifications));
+        await createNotification({
+          recipientId: "admin",
+          role: "admin",
+          type: "payment_confirmed",
+          channel: "admin",
+          title: "تأكيد دفع إلكتروني",
+          body: `أكد المريض ${profile.fullName} الدفع الإلكتروني لمقدم الخدمة.`,
+          requestId: requestId ?? undefined,
+          otherPartyName: profile.fullName,
+        });
       }
 
       if (Platform.OS !== "web") {

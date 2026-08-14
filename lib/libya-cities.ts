@@ -152,7 +152,14 @@ export async function setCityEnabled(cityId: string, enabled: boolean): Promise<
       disabled: Array.from(disabledSet),
     }),
   );
-  return getLibyaCities();
+  const cities = await getLibyaCities();
+  const target = cities.find((city) => city.id === cityId);
+  void (
+    await import("./admin-audit-log")
+  ).logAdminAction({
+    action: `${enabled ? "تفعيل" : "إيقاف"} مدينة: ${target?.name ?? cityId}`,
+  });
+  return cities;
 }
 
 export const TRIPOLI_CITY_ID = "tripoli";
@@ -188,7 +195,16 @@ export async function setAreaEnabled(cityId: string, areaId: string, enabled: bo
       disabledAreas: Array.from(disabledAreas),
     }),
   );
-  return getLibyaCities();
+  const cities = await getLibyaCities();
+  const target = cities.find((city) => city.id === cityId);
+  const area = target?.areas.find((item) => item.id === areaId);
+  void (
+    await import("./admin-audit-log")
+  ).logAdminAction({
+    action: `${enabled ? "تفعيل" : "إيقاف"} منطقة: ${area?.name ?? areaId}`,
+    details: target ? `ضمن مدينة ${target.name}` : undefined,
+  });
+  return cities;
 }
 
 export function getTripoliAreas(cities: LibyaCity[]): LibyaArea[] {

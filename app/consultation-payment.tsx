@@ -39,6 +39,7 @@ async function pushNotification(input: {
   type: string;
   title: string;
   body: string;
+  channel: "done" | "admin" | "patient_request" | "provider_alert" | "marketing";
   requestId?: string;
   otherPartyName?: string;
 }): Promise<void> {
@@ -51,6 +52,7 @@ async function pushNotification(input: {
     recipientId: input.recipientId,
     role: input.recipientRole,
     type: input.type,
+    channel: input.channel,
     title: input.title,
     body: input.body,
     requestId: input.requestId,
@@ -120,8 +122,17 @@ export default function ConsultationPaymentScreen() {
         recipientId: request.doctorId,
         recipientRole: "provider",
         type: "payment_confirmed",
+        channel: "done",
         title: "تأكيد دفع الاستشارة",
         body: `دفع ${request.patientName} قيمة الاستشارة (${request.price.toLocaleString("ar-EG")} د.ل). يمكنك البدء بالاستشارة.`,
+      });
+      await pushNotification({
+        recipientId: "admin",
+        recipientRole: "admin",
+        type: "payment_confirmed",
+        channel: "admin",
+        title: "تأكيد دفع استشارة",
+        body: `دفع المريض ${request.patientName} قيمة الاستشارة للطبيب ${request.doctorName} (${request.price.toLocaleString("ar-EG")} د.ل).`,
         requestId: requestId ? String(requestId) : undefined,
         otherPartyName: request.patientName,
       });

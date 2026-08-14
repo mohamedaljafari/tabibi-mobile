@@ -63,6 +63,7 @@ export default function RateRequestScreen() {
         recipientId: requestState.providerId,
         role: "provider",
         type: "received_rating",
+        channel: "provider_alert",
         title: "تقييم جديد",
         body: `قيّمك ${requestState.patientName} بـ ${stars} نجوم${rating.comment ? `: «${rating.comment}»` : ""}`,
         requestId: requestState.id,

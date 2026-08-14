@@ -186,6 +186,7 @@ export async function notifyConsultationStarted(
       recipientId: request.patientId,
       role: "patient",
       type: "consultation_started",
+      channel: "done",
       requestId: request.id,
       otherPartyName: doctorName,
       title: "بدأت الاستشارة",
