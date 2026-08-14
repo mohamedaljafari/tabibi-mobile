@@ -8,8 +8,7 @@ import * as ImagePicker from "expo-image-picker";
 import { ScreenContainer } from "@/components/screen-container";
 import { getPatientProfile, type PatientAddress, type PatientProfile } from "@/lib/patient-profile";
 import { getPharmacyScopeSummary, type PharmacySearchScope, validatePharmacyQuote } from "@/lib/pharmacy-quote";
-
-const TRIPOLI_AREAS = ["الوفاق", "مشاور"];
+import { getEnabledCities, getLibyaCities, TRIPOLI_CITY_ID } from "@/lib/libya-cities";
 
 export default function PharmacyQuoteScreen() {
   const [profile, setProfile] = useState<PatientProfile | null>(null);
@@ -19,15 +18,37 @@ export default function PharmacyQuoteScreen() {
   const [prescription, setPrescription] = useState<DocumentPicker.DocumentPickerAsset | null>(null);
   const [medicinePhotoUri, setMedicinePhotoUri] = useState<string | null>(null);
   const [scope, setScope] = useState<PharmacySearchScope>("city");
+  const [selectedCityId, setSelectedCityId] = useState<string>(TRIPOLI_CITY_ID);
   const [selectedAreas, setSelectedAreas] = useState<string[]>([]);
   const [distanceKm, setDistanceKm] = useState("5");
+  const [enabledCities, setEnabledCities] = useState<{ id: string; name: string; areas: string[] }[]>([]);
+  const [cityMenuOpen, setCityMenuOpen] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
     getPatientProfile().then((savedProfile) => {
+      if (cancelled) return;
       setProfile(savedProfile);
       setSelectedAddress(savedProfile?.addresses[0] ?? null);
     });
+    getLibyaCities().then((cities) => {
+      if (cancelled) return;
+      setEnabledCities(
+        getEnabledCities(cities).map((city) => ({ id: city.id, name: city.name, areas: city.areas.map((area) => area.name) })),
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  const selectedCity = enabledCities.find((city) => city.id === selectedCityId) ?? enabledCities[0];
+
+  const selectCity = (cityId: string) => {
+    setSelectedCityId(cityId);
+    setSelectedAreas([]);
+    setCityMenuOpen(false);
+  };
 
   const pickPrescription = async () => {
     const result = await DocumentPicker.getDocumentAsync({
@@ -61,13 +82,14 @@ export default function PharmacyQuoteScreen() {
   };
 
   const submitQuoteRequest = () => {
+    const cityName = selectedCity?.name ?? "طرابلس";
     const errors = validatePharmacyQuote({
       medicines,
       hasPrescription: Boolean(prescription),
       hasMedicinePhoto: Boolean(medicinePhotoUri),
       addressId: selectedAddress?.id,
       scope,
-      city: "طرابلس",
+      city: cityName,
       selectedAreas,
       distanceKm,
     });
@@ -79,7 +101,7 @@ export default function PharmacyQuoteScreen() {
 
     Alert.alert(
       "تم إرسال طلب عرض السعر",
-      `سيُحفظ طلبك محليًا في هذه النسخة. نطاق البحث: ${getPharmacyScopeSummary({ scope, city: "طرابلس", selectedAreas, distanceKm })}.`,
+      `سيُحفظ طلبك محليًا في هذه النسخة. نطاق البحث: ${getPharmacyScopeSummary({ scope, city: cityName, selectedAreas, distanceKm })}.`,
       [{ text: "عرض العروض", onPress: () => router.replace({ pathname: "/quote-offers", params: { source: "pharmacy" } } as never) }],
     );
   };
@@ -124,8 +146,8 @@ export default function PharmacyQuoteScreen() {
 
           <Text style={styles.label}>نطاق البحث</Text>
           <View style={styles.scopeTabs}>{(["city", "areas", "distance"] as PharmacySearchScope[]).map((option) => <Pressable key={option} accessibilityRole="button" onPress={() => setScope(option)} style={({ pressed }) => [styles.scopeTab, scope === option && styles.scopeTabActive, pressed && styles.pressed]}><Text style={[styles.scopeTabText, scope === option && styles.scopeTabTextActive]}>{option === "city" ? "المدينة" : option === "areas" ? "المناطق" : "المسافة"}</Text></Pressable>)}</View>
-          {scope === "city" ? <View style={styles.cityRow}><MaterialIcons name="location-city" size={20} color="#A65E67" /><View><Text style={styles.cityTitle}>طرابلس كاملة</Text><Text style={styles.cityHint}>سيصل الطلب إلى الصيدليات ضمن المدينة.</Text></View></View> : null}
-          {scope === "areas" ? <View style={styles.areaWrap}><Text style={styles.fieldHint}>اختر منطقة واحدة أو أكثر داخل طرابلس</Text><View style={styles.areaChips}>{TRIPOLI_AREAS.map((area) => <Pressable key={area} accessibilityRole="checkbox" accessibilityState={{ checked: selectedAreas.includes(area) }} onPress={() => toggleArea(area)} style={({ pressed }) => [styles.areaChip, selectedAreas.includes(area) && styles.areaChipActive, pressed && styles.pressed]}><MaterialIcons name={selectedAreas.includes(area) ? "check" : "add"} size={15} color={selectedAreas.includes(area) ? "#FFFFFF" : "#A65E67"} /><Text style={[styles.areaText, selectedAreas.includes(area) && styles.areaTextActive]}>{area}</Text></Pressable>)}</View></View> : null}
+          {scope === "city" ? <View><View style={styles.cityPickerRow}><Pressable accessibilityRole="button" onPress={() => setCityMenuOpen((open) => !open)} style={({ pressed }) => [styles.cityPicker, pressed && styles.pressed]}><MaterialIcons name="location-city" size={20} color="#A65E67" /><Text numberOfLines={1} style={styles.cityPickerText}>{selectedCity?.name ?? "اختر المدينة"}</Text><MaterialIcons name={cityMenuOpen ? "keyboard-arrow-up" : "keyboard-arrow-down"} size={20} color="#8A8173" /></Pressable></View>{cityMenuOpen ? <View style={styles.addressMenu}>{enabledCities.map((city) => <Pressable key={city.id} accessibilityRole="button" onPress={() => selectCity(city.id)} style={({ pressed }) => [styles.addressOption, pressed && styles.optionPressed]}><MaterialIcons name={city.id === selectedCityId ? "check-circle" : "radio-button-unchecked"} size={19} color="#A65E67" /><Text style={styles.addressLabel}>{city.name}</Text></Pressable>)}</View> : null}<View style={styles.cityRow}><MaterialIcons name="map" size={20} color="#A65E67" /><View><Text style={styles.cityTitle}>{selectedCity?.name} كاملة</Text><Text style={styles.cityHint}>سيصل الطلب إلى الصيدليات ضمن هذه المدينة.</Text></View></View></View> : null}
+          {scope === "areas" && selectedCity ? <View style={styles.areaWrap}><Text style={styles.fieldHint}>اختر منطقة واحدة أو أكثر داخل {selectedCity.name}</Text><View style={styles.areaChips}>{selectedCity.areas.map((area) => <Pressable key={area} accessibilityRole="checkbox" accessibilityState={{ checked: selectedAreas.includes(area) }} onPress={() => toggleArea(area)} style={({ pressed }) => [styles.areaChip, selectedAreas.includes(area) && styles.areaChipActive, pressed && styles.pressed]}><MaterialIcons name={selectedAreas.includes(area) ? "check" : "add"} size={15} color={selectedAreas.includes(area) ? "#FFFFFF" : "#A65E67"} /><Text style={[styles.areaText, selectedAreas.includes(area) && styles.areaTextActive]}>{area}</Text></Pressable>)}</View></View> : null}
           {scope === "distance" ? <View style={styles.distanceRow}><MaterialIcons name="near-me" size={20} color="#A65E67" /><TextInput value={distanceKm} onChangeText={setDistanceKm} keyboardType="numeric" maxLength={3} placeholder="5" placeholderTextColor="#A19787" style={styles.distanceInput} /><Text style={styles.distanceSuffix}>كم من موقعك الحالي</Text></View> : null}
         </View>
 
@@ -168,6 +190,9 @@ const styles = StyleSheet.create({
   noAddress: { alignItems: "center", backgroundColor: "#F8F3E8", borderRadius: 12, gap: 3, marginTop: 4, padding: 9 },
   noAddressText: { color: "#786F61", fontSize: 11, textAlign: "center" },
   profileLink: { color: "#A65E67", fontSize: 11, fontWeight: "800" },
+  cityPicker: { alignItems: "center", backgroundColor: "#FFFDF8", borderColor: "#E8E0D1", borderRadius: 10, borderWidth: 1, flexDirection: "row-reverse", gap: 6, marginTop: 4, minHeight: 42, paddingHorizontal: 8 },
+  cityPickerRow: { alignItems: "flex-start", marginTop: 4 },
+  cityPickerText: { color: "#5A624B", flex: 1, fontSize: 11, fontWeight: "800", textAlign: "right" },
   scopeTabs: { flexDirection: "row-reverse", gap: 4, marginTop: 4 },
   scopeTab: { backgroundColor: "#F8F3E8", borderColor: "#E4DCCB", borderRadius: 8, borderWidth: 1, flex: 1, minHeight: 32, justifyContent: "center", paddingHorizontal: 4 },
   scopeTabActive: { backgroundColor: "#F8ECEE", borderColor: "#A65E67" },

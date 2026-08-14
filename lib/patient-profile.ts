@@ -12,6 +12,10 @@ export type PatientAddress = {
   latitude: number;
   longitude: number;
   source: AddressSource;
+  /** مدينة ليبية مرتبطة بالعنوان (تُحدد تلقائيًا عند استخدام الموقع الحالي). */
+  cityId?: string;
+  /** أسماء المناطق الليبية ضمن العنوان (تُحدد تلقائيًا للمدينة الحالية). */
+  areaNames?: string[];
   createdAt: string;
 };
 

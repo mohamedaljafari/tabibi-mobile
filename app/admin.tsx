@@ -54,7 +54,9 @@ import {
   readMedicalAccessGrants,
   revokeMedicalAccess,
 } from "@/lib/patient-profile";
-type AdminTabId = "summary" | "providers" | "ads" | "services" | "requests" | "patients" | "wallets";
+import { getEnabledCities, getLibyaCities, setCityEnabled, setAreaEnabled, TRIPOLI_CITY_ID, type LibyaCity } from "@/lib/libya-cities";
+
+type AdminTabId = "summary" | "providers" | "ads" | "services" | "requests" | "patients" | "wallets" | "cities";
 
 const OLIVE = "#6B7B3F";
 const GOLD = "#C9A961";
@@ -134,6 +136,7 @@ export default function AdminScreen() {
             { id: "requests", title: "الطلبات", icon: "swap-horiz" },
             { id: "patients", title: "المرضى", icon: "people" },
             { id: "wallets", title: "المحفظات", icon: "account-balance-wallet" },
+            { id: "cities", title: "المدن والمناطق", icon: "location-city" },
           ] as { id: AdminTabId; title: string; icon: string }[]
         ).map((item) => (
           <TouchableOpacity
@@ -155,8 +158,109 @@ export default function AdminScreen() {
         {tab === "requests" ? <RequestsPanel /> : null}
         {tab === "patients" ? <PatientsPanel /> : null}
         {tab === "wallets" ? <WalletsPanel /> : null}
+        {tab === "cities" ? <CitiesPanel /> : null}
       </View>
     </ScreenContainer>
+  );
+}
+
+// ───────────────────── المدن والمناطق ─────────────────────
+
+function CitiesPanel() {
+  const [cities, setCities] = useState<LibyaCity[]>([]);
+
+  const load = useCallback(async () => {
+    setCities(await getLibyaCities());
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const confirmToggleCity = (city: LibyaCity, enabled: boolean) => {
+    Alert.alert(
+      enabled ? "تفعيل المدينة" : "إيقاف المدينة",
+      enabled
+        ? `هل تريد إظهار مدينة «${city.name}» ومناطقها في التطبيق؟`
+        : `هل تريد إخفاء مدينة «${city.name}» ومناطقها من التطبيق؟`,
+      [
+        { text: "إلغاء", style: "cancel" },
+        {
+          text: "تأكيد",
+          onPress: async () => setCities(await setCityEnabled(city.id, enabled)),
+        },
+      ],
+    );
+  };
+
+  const confirmToggleArea = (city: LibyaCity, area: { id: string; name: string }, enabled: boolean) => {
+    Alert.alert(
+      enabled ? "إظهار المنطقة" : "إخفاء المنطقة",
+      enabled
+        ? `هل تريد إعادة إظهار منطقة «${area.name}» في مدينة ${city.name}؟`
+        : `هل تريد إخفاء منطقة «${area.name}» من مدينة ${city.name}؟`,
+      [
+        { text: "إلغاء", style: "cancel" },
+        {
+          text: "تأكيد",
+          onPress: async () => setCities(await setAreaEnabled(city.id, area.id, enabled)),
+        },
+      ],
+    );
+  };
+
+  if (cities.length === 0) return null;
+  const enabledCount = cities.filter((city) => city.enabled).length;
+  const areaCount = cities.reduce((total, city) => total + city.areas.length, 0);
+
+  return (
+    <View style={styles.panel}>
+      <View style={styles.panelHeaderRow}>
+        <Text style={styles.panelTitle}>المدن والمناطق ({enabledCount} مفعّلة)</Text>
+      </View>
+      <Text style={styles.panelHint}>المدن والمناطق الموقفة لا تظهر في قوائم اختيار العناوين ونطاق البحث، ويمكن تفعيلها لاحقًا عند التوسع إلى مدن جديدة.</Text>
+      <View style={styles.grid}>
+        <View style={[styles.statCard, { borderColor: OLIVE + "55" }]}>
+          <Text style={[styles.statValue, { color: OLIVE }]}>{enabledCount}</Text>
+          <Text style={styles.statLabel}>مدينة مفعّلة</Text>
+        </View>
+        <View style={[styles.statCard, { borderColor: GOLD + "55" }]}>
+          <Text style={[styles.statValue, { color: GOLD }]}>{areaCount}</Text>
+          <Text style={styles.statLabel}>منطقة مفعّلة</Text>
+        </View>
+      </View>
+      {cities.map((city) => (
+        <View key={city.id} style={[styles.card, !city.enabled && styles.dimCard]}>
+          <View style={styles.cardHeader}>
+            <View style={styles.cardIdentity}>
+              <Text style={styles.cardName}>{city.name}</Text>
+              <Text style={styles.cardSubtitle}>{city.areas.length} منطقة</Text>
+            </View>
+            <View style={[styles.badge, { backgroundColor: (city.enabled ? "#4E7A3F" : "#B55448") + "22", borderColor: (city.enabled ? "#4E7A3F" : "#B55448") + "66" }]}>
+              <Text style={[styles.badgeText, { color: city.enabled ? "#4E7A3F" : "#B55448" }]}>{city.enabled ? "مفعّلة" : "موقوفة"}</Text>
+            </View>
+          </View>
+          <View style={styles.actionRow}>
+            <ActionChip label={city.enabled ? "إيقاف المدينة" : "تفعيل المدينة"} color={city.enabled ? "#9A8159" : "#4E7A3F"} disabled={city.enabled} onPress={() => confirmToggleCity(city, !city.enabled)} />
+          </View>
+          {city.enabled && city.areas.length > 0 ? (
+            <View style={styles.areasGrid}>
+              {city.areas.map((area) => (
+                <View key={area.id} style={styles.areaRow}>
+                  <Text style={styles.areaName}>{area.name}</Text>
+                  <TouchableOpacity style={styles.areaToggle} onPress={() => confirmToggleArea(city, area, false)} activeOpacity={0.7}>
+                    <MaterialIcons name="visibility-off" size={14} color="#B55448" />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          ) : null}
+          {!city.enabled && city.areas.length > 0 ? (
+            <Text style={styles.dimHint}>فعّل المدينة أولًا لإدارة مناطقها.</Text>
+          ) : null}
+        </View>
+      ))}
+    </View>
   );
 }
 
@@ -1356,4 +1460,15 @@ const styles = StyleSheet.create({
   entryAmount: { fontSize: 12, fontWeight: "800", textAlign: "right" },
   entryDelete: { alignItems: "center", justifyContent: "center", padding: 3 },
   providerChipsRow: { flexDirection: "row-reverse", flexWrap: "wrap", gap: 6, marginTop: 8 },
+  areasGrid: { gap: 4, marginTop: 6 },
+  areaRow: {
+    alignItems: "center",
+    flexDirection: "row-reverse",
+    gap: 5,
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+  },
+  areaName: { color: "#6A6256", flex: 1, fontSize: 10.5, textAlign: "right" },
+  areaToggle: { padding: 4 },
+  dimHint: { color: "#A69B88", fontSize: 10, paddingHorizontal: 7, paddingTop: 3 },
 });

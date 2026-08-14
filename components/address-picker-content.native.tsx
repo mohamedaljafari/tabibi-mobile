@@ -7,6 +7,7 @@ import * as Location from "expo-location";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { addPatientAddress, type AddressSource } from "@/lib/patient-profile";
+import { getLibyaCities, getEnabledCities, TRIPOLI_CITY_ID, type LibyaCity } from "@/lib/libya-cities";
 
 const INITIAL_REGION: Region = {
   latitude: 0,
@@ -34,6 +35,7 @@ export default function AddressPickerContent() {
   const [source, setSource] = useState<AddressSource>("map");
   const [isLocating, setIsLocating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [resolvedCity, setResolvedCity] = useState<{ cityId: string; areaNames: string[] } | null>(null);
   const safeLabel = label?.trim() || "عنوان جديد";
 
   const region = useMemo<Region>(() => (
@@ -56,14 +58,56 @@ export default function AddressPickerContent() {
         return;
       }
       const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      setCoordinates({ latitude: current.coords.latitude, longitude: current.coords.longitude });
+      const coords = { latitude: current.coords.latitude, longitude: current.coords.longitude };
+      setCoordinates(coords);
       setSource("current-location");
+      await resolveCity(coords);
     } catch {
       Alert.alert("تعذر تحديد الموقع", "تأكد من تفعيل خدمات الموقع، أو حدّد العنوان يدويًا من الخريطة.");
     } finally {
       setIsLocating(false);
     }
   };
+
+  /**
+   * تحديد المدينة الليبية المفعّلة المناظرة للموقع.
+   * يطابق area/district/city على أسماء مناطق المدن المفعّلة؛ عند عدم التطابق
+   * يُعاد إلى طرابلس (المدينة المفعّلة افتراضيًا) مع أقرب منطقة مطابقة.
+   */
+  const resolveCity = async (coords: Coordinates) => {
+    try {
+      const places = await Location.reverseGeocodeAsync(coords);
+      const place = places[0];
+      const hints = [place?.district, place?.city].filter(Boolean).map((hint) => String(hint).toLocaleLowerCase("ar"));
+      const enabled = getEnabledCities(await getLibyaCities());
+      const best = matchEnabledCity(enabled, hints);
+      setResolvedCity(best);
+    } catch {
+      setResolvedCity(null);
+    }
+  };
+
+  /**
+   * مطابقةHints الموقع مع المدن المفعّلة ومناطقها.
+   * يعيد أقرب مطابقة لمنطقة ضمن مدينة مفعّلة، أو طرابلس افتراضيًا إذا لم تُفعّل طرابلس.
+   */
+  function matchEnabledCity(cities: LibyaCity[], hints: string[]): { cityId: string; areaNames: string[] } {
+    const fallback = { cityId: TRIPOLI_CITY_ID, areaNames: [] as string[] };
+    for (const hint of hints) {
+      for (const city of cities) {
+        if (!city.enabled) continue;
+        const matched = city.areas.filter((area) => {
+          const areaName = area.name.toLocaleLowerCase("ar");
+          return areaName.includes(hint) || hint.includes(areaName);
+        });
+        if (matched.length > 0) return { cityId: city.id, areaNames: matched.map((area) => area.name) };
+        if (city.name.toLocaleLowerCase("ar").includes(hint) || hint.includes(city.name.toLocaleLowerCase("ar"))) {
+          return { cityId: city.id, areaNames: [] };
+        }
+      }
+    }
+    return cities.some((city) => city.id === TRIPOLI_CITY_ID && city.enabled) ? fallback : { cityId: "", areaNames: [] };
+  }
 
   const selectOnMap = (event: MapPressEvent) => {
     setCoordinates(event.nativeEvent.coordinate);
@@ -84,7 +128,8 @@ export default function AddressPickerContent() {
         const places = await Location.reverseGeocodeAsync(coordinates);
         addressLabel = formatAddress(places[0], coordinates);
       }
-      await addPatientAddress({ label: safeLabel, addressLabel, ...coordinates, source });
+      const cityData = source === "current-location" ? resolvedCity : undefined;
+      await addPatientAddress({ label: safeLabel, addressLabel, ...coordinates, source, ...(cityData ?? {}) });
       router.back();
     } catch {
       Alert.alert("تعذر حفظ العنوان", "حاول مرة أخرى بعد التحقق من اتصال الإنترنت وخدمات الموقع.");
