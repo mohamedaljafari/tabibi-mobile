@@ -38,7 +38,60 @@ export type ProviderAccount = {
   documents: { id: string; type: string; name: string; uri: string }[];
   services: ProviderService[];
   availability: ProviderAvailability;
+  /**
+   * نمط تقديم الخدمة:
+   * - "online": خدمة عن بُعْد (استشارات/متابعات عن بُعْد) — الدفع إلكتروني فقط وقبل الخدمة.
+   * - "home": زيارة منزلية — نقدي (بعد الخدمة) أو إلكتروني (قبلها).
+   * - "both": يقدم النمطين (يترك اختيار طريقة الدفع للمريض).
+   * عند تركه فارغًا يُستنتج من التخصصات (consultations online) أو يُعامل home.
+   */
+  deliveryMode?: "online" | "home" | "both";
 };
+
+/** تخصصات تُقدَّم طبيعيًا كخدمة عن بُعْد (online) لا زيارة منزلية */
+const ONLINE_SPECIALTY_KEYWORDS = [
+  "استشارات",
+  "تغذية",
+  "نفس",
+  "تحليل نفسي",
+  "استشارة",
+  "متابعة عن بُعْد",
+  "Telemedicine",
+];
+
+const HOME_SPECIALTY_KEYWORDS = [
+  "منزلي",
+  "منزلية",
+  "كبار السن",
+  "المسنين",
+  "بيطري",
+  "علاج طبيعي",
+  "إعادة تأهيل",
+  "تأهيل بدني",
+  "تمريض رعاية",
+];
+
+/**
+ * استنتاج نمط تقديم الخدمة من تخصصات مقدم الخدمة:
+ * - إذا كانت كل تخصصاته تُقدَّم عن بُعْد → online
+ * - إذا كانت كل تخصصاته منزلية → home
+ * - وإلا → both
+ */
+export function inferDeliveryMode(account: ProviderAccount): "online" | "home" | "both" {
+  if (account.deliveryMode === "online" || account.deliveryMode === "home" || account.deliveryMode === "both") {
+    return account.deliveryMode;
+  }
+  if (account.specializations.length === 0) return "home";
+  const allOnline = account.specializations.every((specialization) =>
+    ONLINE_SPECIALTY_KEYWORDS.some((keyword) => specialization.includes(keyword)),
+  );
+  const allHome = account.specializations.every((specialization) =>
+    HOME_SPECIALTY_KEYWORDS.some((keyword) => specialization.includes(keyword)),
+  );
+  if (allOnline) return "online";
+  if (allHome) return "home";
+  return "both";
+}
 
 export const PROVIDER_ACCOUNTS_KEY = "provider_accounts_v1";
 export const PROVIDER_SESSION_KEY = "provider_session_v1";

@@ -56,8 +56,16 @@ import {
 } from "@/lib/patient-profile";
 import { getEnabledCities, getLibyaCities, setCityEnabled, setAreaEnabled, TRIPOLI_CITY_ID, type LibyaCity } from "@/lib/libya-cities";
 import { readCitySuggestions, markCitySuggestionReviewed, removeCitySuggestion, type CitySuggestion } from "@/lib/city-suggestions";
+import {
+  addExternalDoctor,
+  makeInitials,
+  readExternalDoctors,
+  removeExternalDoctor,
+  toggleExternalDoctor,
+  type ExternalConsultationDoctor,
+} from "@/lib/consultation-doctors";
 
-type AdminTabId = "summary" | "providers" | "ads" | "services" | "requests" | "patients" | "wallets" | "cities";
+type AdminTabId = "summary" | "providers" | "ads" | "services" | "requests" | "patients" | "wallets" | "cities" | "international";
 
 const OLIVE = "#6B7B3F";
 const GOLD = "#C9A961";
@@ -138,6 +146,7 @@ export default function AdminScreen() {
             { id: "patients", title: "المرضى", icon: "people" },
             { id: "wallets", title: "المحفظات", icon: "account-balance-wallet" },
             { id: "cities", title: "المدن والمناطق", icon: "location-city" },
+            { id: "international", title: "أطباء الخارج", icon: "language" },
           ] as { id: AdminTabId; title: string; icon: string }[]
         ).map((item) => (
           <TouchableOpacity
@@ -160,8 +169,165 @@ export default function AdminScreen() {
         {tab === "patients" ? <PatientsPanel /> : null}
         {tab === "wallets" ? <WalletsPanel /> : null}
         {tab === "cities" ? <CitiesPanel /> : null}
+        {tab === "international" ? <InternationalDoctorsPanel /> : null}
       </View>
     </ScreenContainer>
+  );
+}
+
+// ───────────────────── أطباء الاستشارات خارج ليبيا ─────────────────────
+/**
+ * إدارة أطباء الاستشارات خارج ليبيا من لوحة التحكم يدويًا.
+ * لا يُستخدم رقم هاتف في تسجيلهم إطلاقًا (يُسجَّل الاسم والتخصص والدولة
+ * وسنوات الخبرة والسعر فقط)، وتفعيلهم/إيقافهم/حذفهم يتم من هنا مباشرة.
+ */
+function InternationalDoctorsPanel() {
+  const [doctors, setDoctors] = useState<ExternalConsultationDoctor[]>([]);
+  const [name, setName] = useState("");
+  const [country, setCountry] = useState("");
+  const [specialty, setSpecialty] = useState("");
+  const [experience, setExperience] = useState("");
+  const [price, setPrice] = useState("");
+  const [formError, setFormError] = useState("");
+
+  const load = useCallback(async () => {
+    setDoctors(await readExternalDoctors());
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const resetForm = () => {
+    setName("");
+    setCountry("");
+    setSpecialty("");
+    setExperience("");
+    setPrice("");
+    setFormError("");
+  };
+
+  const submitDoctor = async () => {
+    const trimmedName = name.trim();
+    const trimmedCountry = country.trim();
+    const trimmedSpecialty = specialty.trim();
+    const experienceNumber = Number(experience);
+    const priceNumber = Number(price);
+    if (!trimmedName || !trimmedCountry || !trimmedSpecialty) {
+      setFormError("أكمل الاسم والدولة والتخصص.");
+      return;
+    }
+    if (!Number.isFinite(experienceNumber) || experienceNumber < 0 || experienceNumber > 60) {
+      setFormError("سنوات الخبرة يجب أن تكون رقمًا بين 0 و60.");
+      return;
+    }
+    if (!Number.isFinite(priceNumber) || priceNumber <= 0) {
+      setFormError("سعر الاستشارة يجب أن يكون رقمًا أكبر من صفر.");
+      return;
+    }
+    const next = await addExternalDoctor({
+      name: trimmedName,
+      country: trimmedCountry,
+      specialty: trimmedSpecialty,
+      experience: Math.round(experienceNumber),
+      price: Math.round(priceNumber),
+      initials: makeInitials(trimmedName),
+      enabled: true,
+    });
+    setDoctors(next);
+    resetForm();
+    if (Platform.OS !== "web") {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+  };
+
+  const confirmToggle = (doctor: ExternalConsultationDoctor, enabled: boolean) => {
+    Alert.alert(
+      enabled ? "تفعيل الطبيب" : "إيقاف الطبيب",
+      enabled
+        ? `هل تريد إعادة إظهار «${doctor.name}» في قائمة استشارات خارج ليبيا؟`
+        : `هل تريد إخفاء «${doctor.name}» من قائمة استشارات خارج ليبيا؟`,
+      [
+        { text: "إلغاء", style: "cancel" },
+        {
+          text: "تأكيد",
+          onPress: async () => setDoctors(await toggleExternalDoctor(doctor.id, enabled)),
+        },
+      ],
+    );
+  };
+
+  const confirmRemove = (doctor: ExternalConsultationDoctor) => {
+    Alert.alert(
+      "حذف الطبيب",
+      `هل أنت متأكد من حذف «${doctor.name}» نهائيًا؟ سيتم إخفاؤه من التطبيق فورًا.`,
+      [
+        { text: "إلغاء", style: "cancel" },
+        {
+          text: "حذف",
+          style: "destructive",
+          onPress: async () => setDoctors(await removeExternalDoctor(doctor.id)),
+        },
+      ],
+    );
+  };
+
+  const enabledCount = doctors.filter((doctor) => doctor.enabled).length;
+
+  return (
+    <ScrollView style={styles.panel} showsVerticalScrollIndicator={false}>
+      <View style={styles.panelHeaderRow}>
+        <Text style={styles.panelTitle}>أطباء الاستشارات خارج ليبيا ({enabledCount}/{doctors.length})</Text>
+      </View>
+      <Text style={styles.panelHint}>
+        يُسجَّل الطبيب هنا يدويًا بدون رقم هاتف. الطبيب المفعّل يظهر للمرضى في «استشارات خارج ليبيا»، والموقوف يُخفى حتى إعادته يدويًا.
+      </Text>
+
+      <View style={styles.formCard}>
+        <Text style={styles.formSectionTitle}>إضافة طبيب خارجي جديد</Text>
+        <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="الاسم (مثل: د. خالد المصري)" placeholderTextColor="#B5AD9C" returnKeyType="done" autoCapitalize="none" autoComplete="off" />
+        <View style={styles.positionRow}>
+          <TextInput style={[styles.input, { flex: 1 }]} value={country} onChangeText={setCountry} placeholder="الدولة (مثل: مصر)" placeholderTextColor="#B5AD9C" returnKeyType="done" autoCapitalize="none" autoComplete="off" />
+          <TextInput style={[styles.input, { flex: 1 }]} value={specialty} onChangeText={setSpecialty} placeholder="التخصص (مثل: جلدية)" placeholderTextColor="#B5AD9C" returnKeyType="done" autoCapitalize="none" autoComplete="off" />
+        </View>
+        <View style={styles.positionRow}>
+          <TextInput style={[styles.input, { flex: 1 }]} value={experience} onChangeText={setExperience} placeholder="سنوات الخبرة (رقم)" placeholderTextColor="#B5AD9C" keyboardType="number-pad" returnKeyType="done" autoCapitalize="none" autoComplete="off" />
+          <TextInput style={[styles.input, { flex: 1 }]} value={price} onChangeText={setPrice} placeholder="سعر الاستشارة (د.ل)" placeholderTextColor="#B5AD9C" keyboardType="number-pad" returnKeyType="done" autoCapitalize="none" autoComplete="off" />
+        </View>
+        {formError ? <Text style={styles.formError}>{formError}</Text> : null}
+        <View style={styles.formButtonsRow}>
+          <TouchableOpacity style={styles.secondaryButton} onPress={resetForm} activeOpacity={0.8}>
+            <Text style={styles.secondaryButtonText}>مسح الحقول</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.primaryButton} onPress={() => void submitDoctor()} activeOpacity={0.8}>
+            <Text style={styles.primaryButtonText}>إضافة الطبيب</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {doctors.length === 0 ? (
+        <Text style={styles.emptyText}>لم يُسجَّل أي طبيب خارجي بعد.</Text>
+      ) : (
+        doctors.map((doctor) => (
+          <View key={doctor.id} style={[styles.card, !doctor.enabled && styles.dimCard]}>
+            <View style={styles.cardHeader}>
+              <View style={styles.cardIdentity}>
+                <Text style={styles.cardName}>{doctor.name}</Text>
+                <Text style={styles.cardSubtitle}>{doctor.specialty} · {doctor.country} · {doctor.experience} سنة خبرة</Text>
+              </View>
+              <View style={[styles.badge, { backgroundColor: (doctor.enabled ? "#4E7A3F" : "#B55448") + "22", borderColor: (doctor.enabled ? "#4E7A3F" : "#B55448") + "66" }]}>
+                <Text style={[styles.badgeText, { color: doctor.enabled ? "#4E7A3F" : "#B55448" }]}>{doctor.enabled ? "مفعّل" : "موقوف"}</Text>
+              </View>
+            </View>
+            <Text style={styles.cardSubtitle}>{doctor.price.toLocaleString("ar-EG")} د.ل للاستشارة الواحدة</Text>
+            <View style={styles.actionRow}>
+              <ActionChip label={doctor.enabled ? "إيقاف" : "تفعيل"} color={doctor.enabled ? "#9A8159" : "#4E7A3F"} disabled={false} onPress={() => confirmToggle(doctor, !doctor.enabled)} />
+              <ActionChip label="حذف" color="#B55448" disabled={false} onPress={() => confirmRemove(doctor)} />
+            </View>
+          </View>
+        ))
+      )}
+    </ScrollView>
   );
 }
 

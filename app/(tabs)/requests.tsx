@@ -19,8 +19,29 @@ import { ScreenContainer } from "@/components/screen-container";
 import { getPatientProfile, grantMedicalAccess } from "@/lib/patient-profile";
 import { isRequestRated } from "@/lib/ratings";
 import { readPatientRequests, updateRequestStatus, type ServiceRequest } from "@/lib/service-requests";
+import { readPatientConsultationRequests, type ConsultationRequest } from "@/lib/consultation-requests";
+
+type RequestEntry = ServiceRequest | ConsultationRequest;
+const isConsultationEntry = (entry: RequestEntry): entry is ConsultationRequest =>
+  "doctorId" in entry && !("providerId" in entry);
+const isServiceEntry = (entry: RequestEntry): entry is ServiceRequest => "providerId" in entry;
+const DAY_LABELS = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
+function formatScheduledLabel(timestamp: number): string {
+  const date = new Date(timestamp);
+  const hours = date.getHours().toString().padStart(2, "0");
+  const minutes = date.getMinutes().toString().padStart(2, "0");
+  return `${DAY_LABELS[date.getDay()]} ${date.getDate()}/${date.getMonth() + 1} — ${hours}:${minutes}`;
+}
 import { createNotification } from "@/lib/notifications";
 import { addWalletEntry } from "@/lib/wallets";
+
+const CONSULTATION_STATUS_STYLES: Record<ConsultationRequest["status"], { label: string; background: string; text: string }> = {
+  pending: { label: "بانتظار القبول", background: "#F0EBDD", text: "#8A8173" },
+  accepted: { label: "مقبول", background: "#EAF3E4", text: "#5A6A2E" },
+  rejected: { label: "مرفوض", background: "#F6E8E6", text: "#B55448" },
+  completed: { label: "مكتمل", background: "#E4ECF3", text: "#3F5F7E" },
+  cancelled: { label: "ملغي", background: "#F0EBDD", text: "#8A8173" },
+};
 
 const STATUS_STYLES: Record<ServiceRequest["status"], { label: string; background: string; text: string }> = {
   pending: { label: "قيد الانتظار", background: "#F0EBDD", text: "#8A8173" },
@@ -40,7 +61,7 @@ function formatRequestDate(timestamp: number) {
 }
 
 export default function RequestsScreen() {
-  const [requests, setRequests] = useState<ServiceRequest[]>([]);
+  const [requests, setRequests] = useState<RequestEntry[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -51,8 +72,14 @@ export default function RequestsScreen() {
       setLoading(false);
       return;
     }
-    const stored = await readPatientRequests(`${profile.fullName}-${profile.phone}`);
-    setRequests(stored.sort((first, second) => second.createdAt - first.createdAt));
+    const patientId = `${profile.fullName}-${profile.phone}`;
+    const [stored, consultations] = await Promise.all([
+      readPatientRequests(patientId),
+      readPatientConsultationRequests(patientId),
+    ]);
+    setRequests(
+      [...stored, ...consultations].sort((first, second) => second.createdAt - first.createdAt),
+    );
     setLoaded(true);
     setLoading(false);
   }, []);
@@ -62,6 +89,24 @@ export default function RequestsScreen() {
       loadRequests();
     }, [loadRequests]),
   );
+
+  const cancelConsultation = (item: ConsultationRequest) => {
+    if (item.status !== "pending" && item.paymentStatus !== "payment_pending") return;
+    Alert.alert("إلغاء طلب الاستشارة", "هل تريد إلغاء هذا الطلب؟", [
+      { text: "إلغاء", style: "cancel" },
+      {
+        text: "نعم، إلغاء الطلب",
+        style: "destructive",
+        onPress: async () => {
+          const { cancelConsultationRequest } = await import("@/lib/consultation-requests");
+          const { removeThread } = await import("@/lib/chat");
+          await cancelConsultationRequest(item.id);
+          await removeThread(item.id);
+          setRequests((current) => current.filter((request) => request.id !== item.id));
+        },
+      },
+    ]);
+  };
 
   const completeRequest = (item: ServiceRequest) => {
     if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -169,18 +214,134 @@ export default function RequestsScreen() {
     })();
   };
 
-  const openChat = (item: ServiceRequest) => {
-    if (item.status !== "accepted" && item.status !== "completed") return;
+  const openChat = (item: RequestEntry) => {
+    if (isConsultationEntry(item)) {
+      if (item.status !== "accepted" || item.paymentStatus !== "confirmed") return;
+    } else if (item.status !== "accepted" && item.status !== "completed") {
+      return;
+    }
     if (Platform.OS !== "web") {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
     router.push({
       pathname: "/chat",
-      params: { requestId: item.id, providerName: item.providerName },
+      params: {
+        requestId: item.id,
+        providerName: isConsultationEntry(item) ? item.doctorName : item.providerName,
+      },
     });
   };
 
-  const renderRequest = ({ item }: { item: ServiceRequest }) => {
+  const renderRequest = ({ item }: { item: RequestEntry }) => {
+    if (isConsultationEntry(item)) {
+      return renderConsultationCard(item);
+    }
+    return renderServiceCard(item);
+  };
+
+  const renderConsultationCard = (item: ConsultationRequest) => {
+    const statusStyle = CONSULTATION_STATUS_STYLES[item.status] ?? CONSULTATION_STATUS_STYLES.pending;
+    const scheduleLabel =
+      item.mode === "scheduled" && item.scheduledAt ? formatScheduledLabel(item.scheduledAt) : null;
+    const canChat = item.status === "accepted" && item.paymentStatus === "confirmed";
+    const canCancel = item.status === "pending" && item.paymentStatus === "payment_pending";
+    const canPay = item.status === "accepted" && item.paymentStatus === "payment_pending";
+    return (
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <View style={styles.providerCopy}>
+            <Text style={styles.providerName}>{item.doctorName}</Text>
+            <Text style={styles.specialtyText}>
+              {item.specialtyLabel}
+              {item.type === "international" ? " — طبيب خارج ليبيا" : " — طبيب داخل ليبيا"}
+            </Text>
+            <Text style={styles.modeText}>
+              {item.mode === "scheduled" ? "استشارة بموعد محدد" : "استشارة فورية"}
+              {scheduleLabel ? ` — ${scheduleLabel}` : ""}
+            </Text>
+          </View>
+          <View style={[styles.statusBadge, { backgroundColor: statusStyle.background }]}>
+            <Text style={[styles.statusText, { color: statusStyle.text }]}>{statusStyle.label}</Text>
+          </View>
+        </View>
+
+        <Text style={styles.timeText}>{formatRequestDate(item.createdAt)}</Text>
+
+        {item.paymentStatus === "payment_pending" && item.status !== "rejected" && item.status !== "cancelled" ? (
+          <View style={styles.paymentNote}>
+            <MaterialIcons name="payment" size={14} color="#C9A961" />
+            <Text style={styles.paymentNoteText}>
+              {item.status === "pending"
+                ? "عند قبول الطبيب للطلب سيتم إتمام الدفع الإلكتروني قبل الاستشارة."
+                : "الاستشارة خدمة عن بُعد، الدفع الإلكتروني قبل تقديم الخدمة فقط."}
+            </Text>
+          </View>
+        ) : null}
+
+        {canChat ? (
+          <View style={styles.actionsRow}>
+            <Pressable
+              style={({ pressed }) => [styles.chatButton, pressed && { opacity: 0.75 }]}
+              onPress={() => openChat(item)}
+            >
+              <MaterialIcons name="chat" size={16} color="#FFFDF8" />
+              <Text style={styles.chatButtonText}>الدردشة مع الطبيب</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
+        {canPay ? (
+          <View style={styles.actionsRow}>
+            <Pressable
+              style={({ pressed }) => [styles.payButton, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
+              onPress={() =>
+                router.push({
+                  pathname: "/consultation-payment",
+                  params: { requestId: item.id, doctorName: item.doctorName },
+                })
+              }
+            >
+              <MaterialIcons name="credit-card" size={16} color="#FFFDF8" />
+              <Text style={styles.payButtonText}>إتمام الدفع الإلكتروني</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
+        {item.paymentStatus === "confirmed" && item.status === "accepted" ? (
+          <View style={styles.doneRow}>
+            <MaterialIcons name="check-circle" size={14} color="#2E7D32" />
+            <Text style={styles.doneText}>تم الدفع، وتتاح لك الدردشة مع الطبيب</Text>
+          </View>
+        ) : null}
+
+        {item.status === "completed" ? (
+          <View style={styles.doneRow}>
+            <MaterialIcons name="done-all" size={14} color="#3F5F7E" />
+            <Text style={styles.doneText}>اكتملت الاستشارة</Text>
+          </View>
+        ) : null}
+
+        {canCancel ? (
+          <View style={styles.actionsRow}>
+            <Pressable
+              style={({ pressed }) => [styles.cancelRequestButton, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
+              onPress={() => cancelConsultation(item)}
+            >
+              <MaterialIcons name="cancel" size={15} color="#B55448" />
+              <Text style={styles.cancelRequestButtonText}>إلغاء الطلب</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
+        <View style={styles.totalRow}>
+          <Text style={styles.totalLabel}>سعر الاستشارة</Text>
+          <Text style={styles.totalValue}>{item.price.toLocaleString("ar-EG")} د.ل</Text>
+        </View>
+      </View>
+    );
+  };
+
+  const renderServiceCard = (item: ServiceRequest) => {
     const statusStyle = STATUS_STYLES[item.status] ?? STATUS_STYLES.pending;
     return (
       <View style={styles.card}>
@@ -407,4 +568,41 @@ const styles = StyleSheet.create({
   accessButtonText: { color: "#FFFDF8", fontSize: 11, fontWeight: "800" },
   emptySection: { alignItems: "center", backgroundColor: "#F0EBDD", borderRadius: 16, gap: 10, margin: 20, padding: 28 },
   emptyText: { color: "#786F61", fontSize: 12, lineHeight: 18, textAlign: "center", paddingHorizontal: 12 },
+  modeText: { color: "#8A8173", fontSize: 10, marginTop: 2, textAlign: "right" },
+  paymentNote: {
+    alignItems: "flex-start",
+    backgroundColor: "#FBF3E3",
+    borderRadius: 11,
+    flexDirection: "row-reverse",
+    gap: 7,
+    padding: 10,
+  },
+  paymentNoteText: { color: "#8A6F3E", fontSize: 11, flex: 1, lineHeight: 16, textAlign: "right" },
+  payButton: {
+    alignItems: "center",
+    backgroundColor: "#C9A961",
+    borderRadius: 16,
+    flexDirection: "row-reverse",
+    flex: 1,
+    gap: 6,
+    justifyContent: "center",
+    paddingVertical: 10,
+  },
+  payButtonText: { color: "#FFFDF8", fontSize: 12, fontWeight: "800" },
+  doneRow: { alignItems: "center", backgroundColor: "#EAF3E4", borderRadius: 11, flexDirection: "row-reverse", gap: 7, padding: 10 },
+  doneText: { color: "#2E7D32", fontSize: 11, flex: 1, fontWeight: "700", lineHeight: 16, textAlign: "right" },
+  cancelRequestButton: {
+    alignItems: "center",
+    backgroundColor: "#F0EBDD",
+    borderColor: "#E0C9C5",
+    borderWidth: 1,
+    borderRadius: 16,
+    flexDirection: "row-reverse",
+    gap: 5,
+    justifyContent: "center",
+    paddingVertical: 10,
+    paddingLeft: 14,
+    paddingRight: 14,
+  },
+  cancelRequestButtonText: { color: "#B55448", fontSize: 12, fontWeight: "800" },
 });

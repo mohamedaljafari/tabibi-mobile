@@ -30,8 +30,13 @@ import {
   MessageAttachmentCard,
 } from "@/components/chat-attachment-bar";
 import { findThread, readMessages, sendAttachmentMessage, sendMessage, type ChatAttachment, type ChatMessage } from "@/lib/chat";
+import { readConsultationRequests, type ConsultationRequest } from "@/lib/consultation-requests";
 import { getPatientProfile } from "@/lib/patient-profile";
 import { readPatientRequests, type ServiceRequest } from "@/lib/service-requests";
+
+type RequestForChat = ServiceRequest | ConsultationRequest;
+const isConsultation = (request: RequestForChat): request is ConsultationRequest =>
+  (request as ConsultationRequest).doctorId !== undefined && (request as ServiceRequest).providerId === undefined;
 
 const MESSAGE_WINDOW = { top: 0, bottom: 6, left: 6, right: 6 };
 
@@ -63,8 +68,11 @@ export default function ChatScreen() {
     const init = async () => {
       const request = await findRequestForThread(requestId);
       if (cancelled) return;
-      const allowed = request?.status === "accepted" || request?.status === "completed";
-      if (!allowed) {
+      const requestStatus = request?.status ?? null;
+      const isPaidConsultation =
+        request && isConsultation(request) && requestStatus === "accepted" && request.paymentStatus === "confirmed";
+      const accepted = requestStatus === "accepted" || requestStatus === "completed" || isPaidConsultation;
+      if (!accepted) {
         setBlocked(true);
         setLoading(false);
         return;
@@ -77,7 +85,7 @@ export default function ChatScreen() {
         return;
       }
       setThreadId(thread.threadId);
-      setDisplayName(thread.providerName || displayName);
+      setDisplayName(thread.providerName || (request && isConsultation(request) ? request.doctorName : displayName));
       const loaded = await readMessages(thread.threadId);
       if (cancelled) return;
       setMessages(loaded);

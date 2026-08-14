@@ -23,6 +23,7 @@ import { buildDemoProviderAccount } from "@/lib/demo-provider";
 import {
   formatProviderAvailability,
   formatYearsOfExperience,
+  inferDeliveryMode,
   initialsFromName,
   readProviderAccounts,
   type ProviderAccount,
@@ -123,11 +124,37 @@ export default function DoctorDetailScreen() {
 
   const [chosenPaymentMethod, setChosenPaymentMethod] = useState<PaymentMethod | null>(null);
 
+  /**
+   * قاعدة الدفع المعتمدة:
+   * - الخدمة عن بُعد (online): إلكتروني فقط، قبل تقديم الخدمة.
+   * - الزيارة المنزلية (home): نقدي (بعد الخدمة) أو إلكتروني (قبلها).
+   */
+  const isOnlineService = activeProvider ? inferDeliveryMode(activeProvider) === "online" : false;
+
   const promptAddressAndSubmit = () => {
     if (!activeProvider || selectedServices.size === 0 || submitting) return;
+    const totalLabel = `المبلغ الإجمالي: ${totalSelectedPrice.toLocaleString("ar-EG")} د.ل`;
+    if (isOnlineService) {
+      Alert.alert(
+        "طريقة الدفع",
+        `${totalLabel}. هذه خدمة عن بُعد، لذا يكون الدفع إلكترونيًا فقط وقبل تقديم الخدمة.`,
+        [
+          {
+            text: "دفع إلكتروني",
+            style: "default",
+            onPress: () => {
+              setChosenPaymentMethod("electronic");
+              promptAddressAfterPayment();
+            },
+          },
+          { text: "إلغاء", style: "cancel" },
+        ],
+      );
+      return;
+    }
     Alert.alert(
       "اختر طريقة الدفع",
-      `المبلغ الإجمالي: ${totalSelectedPrice.toLocaleString("ar-EG")} د.ل. الدفع النقدي يتم بعد انتهاء الخدمة، والدفع الإلكتروني يتم بعد قبول مقدم الخدمة للطلب.`,
+      `${totalLabel}. للزيارة المنزلية: الدفع النقدي بعد انتهاء الخدمة، أو الدفع الإلكتروني بعد قبول مقدم الخدمة للطلب.`,
       [
         { text: "دفع نقدي", style: "default", onPress: () => { setChosenPaymentMethod("cash"); promptAddressAfterPayment(); } },
         { text: "دفع إلكتروني", style: "default", onPress: () => { setChosenPaymentMethod("electronic"); promptAddressAfterPayment(); } },
