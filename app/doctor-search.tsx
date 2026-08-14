@@ -107,7 +107,7 @@ export default function DoctorSearchScreen() {
                 {provider.bio ? <Text numberOfLines={2} style={styles.providerBio}>{provider.bio}</Text> : null}
               </View>
               {firstServicePrice(provider) > 0 ? (
-                <View style={styles.priceBlock}><Text style={styles.price}>{firstServicePrice(provider)}</Text><Text style={styles.currency}>ر.س</Text></View>
+                <View style={styles.priceBlock}><Text style={styles.price}>{firstServicePrice(provider)}</Text><Text style={styles.currency}>د.ل</Text></View>
               ) : null}
             </Pressable>
           ))}
@@ -116,7 +116,7 @@ export default function DoctorSearchScreen() {
             <Pressable key={doctor.id} accessibilityRole="button" onPress={() => router.push({ pathname: "/doctor-detail", params: { specialtyId: specialty.id, demoDoctorId: doctor.id } } as never)} style={({ pressed }) => [styles.doctorCard, pressed && styles.pressed]}>
               <View style={styles.doctorAvatar}><Text style={styles.avatarText}>{doctor.initials}</Text></View>
               <View style={styles.doctorInfo}><Text style={styles.doctorName}>{doctor.name}</Text><Text style={styles.doctorSpecialty}>{specialty.title}</Text><View style={styles.doctorMeta}><View style={styles.metaItem}><MaterialIcons name="star" size={14} color="#C9A961" /><Text style={styles.metaText}>{doctor.rating} ({doctor.reviewCount})</Text></View><View style={styles.metaItem}><MaterialIcons name="location-on" size={14} color="#6B7B3F" /><Text style={styles.metaText}>{doctor.distanceKm} كم</Text></View></View></View>
-              <View style={styles.priceBlock}><Text style={styles.price}>{doctor.price}</Text><Text style={styles.currency}>ر.س</Text></View>
+              <View style={styles.priceBlock}><Text style={styles.price}>{doctor.price}</Text><Text style={styles.currency}>د.ل</Text></View>
             </Pressable>
           ))}
         </ScrollView>

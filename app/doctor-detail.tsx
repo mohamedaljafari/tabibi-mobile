@@ -19,6 +19,7 @@ import { Platform } from "react-native";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { DEMO_DOCTORS, getDoctorSpecialty, type DemoDoctor } from "@/lib/doctor-directory";
+import { buildDemoProviderAccount } from "@/lib/demo-provider";
 import {
   formatProviderAvailability,
   formatYearsOfExperience,
@@ -84,6 +85,15 @@ export default function DoctorDetailScreen() {
     return DEMO_DOCTORS.find((doctor) => doctor.id === demoDoctorId) ?? null;
   }, [demoDoctorId]);
 
+  // حساب مزوّد افتراضي للطبيب النموذجي: يجعله قابلاً للحجز بالكامل
+  // (خدمات افتراضية، اختيار، إرسال طلب) بدلًا من عرض ثابت.
+  const demoProvider = useMemo<ProviderAccount | null>(() => {
+    if (!demoDoctor || !specialtyId) return null;
+    return buildDemoProviderAccount(demoDoctor, specialtyId);
+  }, [demoDoctor, specialtyId]);
+
+  const activeProvider: ProviderAccount | null = demoProvider ?? provider;
+
   const toggleService = (serviceId: string) => {
     setSelectedServices((previous) => {
       const next = new Set(previous);
@@ -100,24 +110,24 @@ export default function DoctorDetailScreen() {
   };
 
   const totalSelectedPrice = useMemo(() => {
-    if (!provider) return 0;
-    return provider.services
+    if (!activeProvider) return 0;
+    return activeProvider.services
       .filter((service) => selectedServices.has(service.id))
       .reduce((total, service) => total + service.price, 0);
-  }, [provider, selectedServices]);
+  }, [activeProvider, selectedServices]);
 
   const selectedServicesList = useMemo(() => {
-    if (!provider) return [];
-    return provider.services.filter((service) => selectedServices.has(service.id));
-  }, [provider, selectedServices]);
+    if (!activeProvider) return [];
+    return activeProvider.services.filter((service) => selectedServices.has(service.id));
+  }, [activeProvider, selectedServices]);
 
   const [chosenPaymentMethod, setChosenPaymentMethod] = useState<PaymentMethod | null>(null);
 
   const promptAddressAndSubmit = () => {
-    if (!provider || selectedServices.size === 0 || submitting) return;
+    if (!activeProvider || selectedServices.size === 0 || submitting) return;
     Alert.alert(
       "اختر طريقة الدفع",
-      `المبلغ الإجمالي: ${totalSelectedPrice.toLocaleString("ar-EG")} دينار. الدفع النقدي يتم بعد انتهاء الخدمة، والدفع الإلكتروني يتم بعد قبول مقدم الخدمة للطلب.`,
+      `المبلغ الإجمالي: ${totalSelectedPrice.toLocaleString("ar-EG")} د.ل. الدفع النقدي يتم بعد انتهاء الخدمة، والدفع الإلكتروني يتم بعد قبول مقدم الخدمة للطلب.`,
       [
         { text: "دفع نقدي", style: "default", onPress: () => { setChosenPaymentMethod("cash"); promptAddressAfterPayment(); } },
         { text: "دفع إلكتروني", style: "default", onPress: () => { setChosenPaymentMethod("electronic"); promptAddressAfterPayment(); } },
@@ -127,7 +137,7 @@ export default function DoctorDetailScreen() {
   };
 
   const promptAddressAfterPayment = () => {
-    if (!provider) return;
+    if (!activeProvider) return;
     const addressChoices = addressesForProvider();
     const choiceButtons = addressChoices.map((address) => ({
       text: address.addressLabel,
@@ -169,12 +179,12 @@ export default function DoctorDetailScreen() {
   }, [loaded]);
 
   const promptAddressAndSubmitFallback = () => {
-    if (!provider) return;
-    router.push({ pathname: "/request-address", params: { providerId: provider.id } } as never);
+    if (!activeProvider) return;
+    router.push({ pathname: "/request-address", params: { providerId: activeProvider.id } } as never);
   };
 
   const submitRequest = async (addressLabel: string, addressDetails?: string) => {
-    if (!provider || selectedServices.size === 0 || submitting) return;
+    if (!activeProvider || selectedServices.size === 0 || submitting) return;
     const profile = await getPatientProfile();
     if (!profile) {
       Alert.alert("البيانات غير مكتملة", "أكمل بيانات حسابك من صفحة حسابي ثم أعد المحاولة.");
@@ -188,8 +198,8 @@ export default function DoctorDetailScreen() {
         patientPhone: profile.phone,
         addressLabel,
         addressDetails,
-        providerId: provider.id,
-        providerName: provider.fullName,
+        providerId: activeProvider.id,
+        providerName: activeProvider.fullName,
         specialtyLabel: specialty.title,
         services: selectedServicesList.map((service) => ({
           serviceId: service.id,
@@ -201,7 +211,7 @@ export default function DoctorDetailScreen() {
         paymentMethod: chosenPaymentMethod ?? undefined,
       });
       await createNotification({
-        recipientId: provider.id,
+        recipientId: activeProvider.id,
         role: "provider",
         type: "request_received",
         title: "طلب خدمة جديد",
@@ -215,7 +225,7 @@ export default function DoctorDetailScreen() {
       void request;
       router.replace({
         pathname: "/payment",
-        params: { requestId: request.id, providerId: provider.id, paymentMethod: chosenPaymentMethod ?? "cash", total: String(totalSelectedPrice) },
+        params: { requestId: request.id, providerId: activeProvider.id, paymentMethod: chosenPaymentMethod ?? "cash", total: String(totalSelectedPrice) },
       } as never);
     } catch {
       Alert.alert("تعذر إرسال الطلب", "حدثت مشكلة أثناء الحفظ، حاول مرة أخرى.");
@@ -233,50 +243,50 @@ export default function DoctorDetailScreen() {
               <MaterialIcons name="arrow-forward" size={22} color="#6B7B3F" />
             </Pressable>
             <View style={styles.headerCopy}>
-              <Text style={styles.title}>{provider ? provider.fullName : demoDoctor ? demoDoctor.name : specialty.title}</Text>
+              <Text style={styles.title}>{activeProvider ? activeProvider.fullName : specialty.title}</Text>
               <Text style={styles.subtitle}>{specialty.title}</Text>
             </View>
           </View>
 
-          {provider ? (
+          {activeProvider ? (
             <View style={styles.profileCard}>
-              {provider.photoUri ? (
-                <Image source={{ uri: provider.photoUri }} style={styles.profilePhoto} />
+              {activeProvider.photoUri ? (
+                <Image source={{ uri: activeProvider.photoUri }} style={styles.profilePhoto} />
               ) : (
                 <View style={styles.profileAvatar}>
-                  <Text style={styles.profileAvatarText}>{initialsFromName(provider.fullName)}</Text>
+                  <Text style={styles.profileAvatarText}>{initialsFromName(activeProvider.fullName)}</Text>
                 </View>
               )}
               <View style={styles.profileCopy}>
                 <View style={styles.nameRow}>
-                  <Text style={styles.profileName}>{provider.fullName}</Text>
+                  <Text style={styles.profileName}>{activeProvider.fullName}</Text>
                   <View style={styles.verifiedBadge}>
                     <MaterialIcons name="verified" size={14} color="#C9A961" />
-                    <Text style={styles.verifiedText}>موثّق</Text>
+                    <Text style={styles.verifiedText}>{demoProvider ? "نموذجي" : "موثّق"}</Text>
                   </View>
                 </View>
-                <Text style={styles.profileRole}>{provider.role}</Text>
+                <Text style={styles.profileRole}>{specialty.title}</Text>
                 <View style={styles.experienceRow}>
-                  {formatYearsOfExperience(provider.yearsOfExperience) ? (
+                  {formatYearsOfExperience(activeProvider.yearsOfExperience) ? (
                     <View style={styles.metaItem}>
                       <MaterialIcons name="work-outline" size={14} color="#6B7B3F" />
-                      <Text style={styles.metaText}>{formatYearsOfExperience(provider.yearsOfExperience)}</Text>
+                      <Text style={styles.metaText}>{formatYearsOfExperience(activeProvider.yearsOfExperience)}</Text>
                     </View>
                   ) : null}
                   <View style={styles.metaItem}>
                     <MaterialIcons name="event-available" size={14} color="#6B7B3F" />
-                    <Text style={styles.metaText}>{formatProviderAvailability(provider.availability)}</Text>
+                    <Text style={styles.metaText}>{formatProviderAvailability(activeProvider.availability)}</Text>
                   </View>
                 </View>
                 <View style={styles.specialtyChips}>
-                  {provider.specializations.map((specialization) => (
+                  {activeProvider.specializations.map((specialization) => (
                     <View key={specialization} style={styles.specialtyChip}>
                       <Text style={styles.specialtyChipText}>{specialization}</Text>
                     </View>
                   ))}
                 </View>
               </View>
-              {provider.bio ? <Text style={styles.providerBio}>{provider.bio}</Text> : null}
+              {activeProvider.bio ? <Text style={styles.providerBio}>{activeProvider.bio}</Text> : null}
             </View>
           ) : null}
 
@@ -313,11 +323,11 @@ export default function DoctorDetailScreen() {
             </View>
           ) : null}
 
-          {provider && provider.services.length > 0 ? (
+          {activeProvider && activeProvider.services.length > 0 ? (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>الخدمات والأسعار</Text>
               <Text style={styles.sectionCaption}>اختر خدمة أو أكثر لإرسال الطلب</Text>
-              {provider.services.map((service) => {
+              {activeProvider.services.map((service) => {
                 const selected = selectedServices.has(service.id);
                 return (
                   <Pressable
@@ -342,23 +352,11 @@ export default function DoctorDetailScreen() {
                     </View>
                     <View style={styles.servicePriceBlock}>
                       <Text style={styles.servicePrice}>{service.price}</Text>
-                      <Text style={styles.serviceCurrency}>ر.س</Text>
+                      <Text style={styles.serviceCurrency}>د.ل</Text>
                     </View>
                   </Pressable>
                 );
               })}
-            </View>
-          ) : demoDoctor ? (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>خدمات الطبيب</Text>
-              <View style={styles.demoServiceRow}>
-                <Text style={styles.demoServiceName}>كشف منزلي</Text>
-                <View style={styles.servicePriceBlock}>
-                  <Text style={styles.servicePrice}>{demoDoctor.price}</Text>
-                  <Text style={styles.serviceCurrency}>ر.س</Text>
-                </View>
-              </View>
-              <Text style={styles.demoCaption}>البيانات النموذجية للواجهة؛ خدمات هذا الطبيب تُضاف لاحقًا.</Text>
             </View>
           ) : (
             <View style={styles.emptySection}>
@@ -371,11 +369,11 @@ export default function DoctorDetailScreen() {
           )}
         </ScrollView>
 
-        {provider && selectedServices.size > 0 ? (
+          {activeProvider && selectedServices.size > 0 ? (
           <View style={styles.submitBar}>
             <View style={styles.totalCopy}>
               <Text style={styles.totalLabel}>إجمالي الخدمات المختارة</Text>
-              <Text style={styles.totalValue}>{totalSelectedPrice} ر.س</Text>
+              <Text style={styles.totalValue}>{totalSelectedPrice} د.ل</Text>
             </View>
             <Pressable accessibilityRole="button" accessibilityLabel="إرسال الطلب للخدمات المختارة" onPress={promptAddressAndSubmit} disabled={submitting} style={({ pressed }) => [styles.submitButton, submitting && styles.submitDisabled, pressed && styles.submitPressed]}>
               {submitting ? <Text style={styles.submitDisabledText}>جارٍ الإرسال...</Text> : (

@@ -788,7 +788,7 @@ function WalletsPanel() {
   const confirmRemove = (entry: WalletLedgerEntry) => {
     Alert.alert(
       "حذف القيد",
-      `هل تريد حذف قيد بقيمة ${entry.amount.toFixed(2)} من محفظة «${entry.ownerName}»؟`,
+      `هل تريد حذف قيد بقيمة ${entry.amount.toFixed(2)} د.ل من محفظة «${entry.ownerName}»؟`,
       [
         { text: "إلغاء", style: "cancel" },
         {
@@ -1035,7 +1035,7 @@ function WalletSummaryCard({ summary, onRemove }: { summary: WalletSummary; onRe
                   },
                 ]}
               >
-                {entry.kind === "credit" ? "+" : "-"}{entry.amount.toFixed(2)}
+                {entry.kind === "credit" ? "+" : "-"}{entry.amount.toFixed(2)} د.ل
               </Text>
               <TouchableOpacity
                 style={styles.entryDelete}

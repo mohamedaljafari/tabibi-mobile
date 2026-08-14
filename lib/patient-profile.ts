@@ -90,8 +90,9 @@ export function validateRegistration(input: RegistrationInput): RegistrationVali
   if (input.fullName.trim().length < 3) {
     errors.fullName = "أدخل الاسم الكامل كما يظهر في هويتك.";
   }
-  if (phoneDigits.length < 8 || phoneDigits.length > 15) {
-    errors.phone = "أدخل رقم هاتف صحيحًا من 8 إلى 15 رقمًا.";
+  // رقم هاتف ليبي: 09XXXXXXXX (10 خانات تبدأ بـ 09) أو +2189XXXXXXXX (12 رقمًا)
+  if (!/^\+2189\d{8}$/.test(input.phone.trim()) && !/^09\d{8}$/.test(phoneDigits)) {
+    errors.phone = "أدخل رقم هاتف ليبي صحيحًا بصيغة +2189XXXXXXXX أو 09XXXXXXXX (10 خانات تبدأ بـ 09).";
   }
   if (input.password.length < 8) {
     errors.password = "يجب أن تتكون كلمة المرور من 8 أحرف على الأقل.";

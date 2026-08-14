@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View , Alert } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 
@@ -8,6 +8,13 @@ import { ScreenContainer } from "@/components/screen-container";
 import { ASSISTED_SERVICE_SORT_LABELS, getAssistedService, getAssistedServiceProviders, type AssistedServiceSort } from "@/lib/assisted-services-directory";
 import { getPatientProfile, type PatientAddress, type PatientProfile } from "@/lib/patient-profile";
 import { mergeAssistedServiceProviders, readProviderAccounts, type ProviderAccount } from "@/lib/provider-registry";
+import { buildDemoProviderAccount } from "@/lib/demo-provider";
+
+/** ربط معرفات الخدمات المساعدة بمفاتيح خدمات العرض النموذجية في DEMO_SERVICE_LABELS */
+const DEMO_SERVICE_KEYS: Record<string, string> = {
+  "elderly-care": "senior_care",
+  "physical-therapy": "physio",
+};
 
 const SORT_OPTIONS: AssistedServiceSort[] = ["nearest", "rating", "price-high", "price-low"];
 
@@ -49,7 +56,7 @@ export default function AssistedServiceSearchScreen() {
           {selectedAddress ? <View><Pressable accessibilityRole="button" accessibilityLabel="اختيار عنوان الزيارة" onPress={() => setAddressMenuOpen((open) => !open)} style={({ pressed }) => [styles.addressPicker, pressed && styles.pressed]}><MaterialIcons name="location-on" size={21} color="#6B7B3F" /><View style={styles.addressCopy}><Text style={styles.addressLabel}>{selectedAddress.label}</Text><Text numberOfLines={1} style={styles.addressValue}>{selectedAddress.addressLabel}</Text></View><MaterialIcons name={addressMenuOpen ? "keyboard-arrow-up" : "keyboard-arrow-down"} size={22} color="#8A8173" /></Pressable>{addressMenuOpen ? <View style={styles.addressMenu}>{profile?.addresses.map((address) => <Pressable key={address.id} accessibilityRole="button" onPress={() => chooseAddress(address)} style={({ pressed }) => [styles.addressOption, pressed && styles.optionPressed]}><MaterialIcons name={address.id === selectedAddress.id ? "check-circle" : "radio-button-unchecked"} size={19} color="#6B7B3F" /><View style={styles.addressCopy}><Text style={styles.optionTitle}>{address.label}</Text><Text numberOfLines={1} style={styles.optionText}>{address.addressLabel}</Text></View></Pressable>)}</View> : null}</View> : <View style={styles.emptyAddress}><MaterialIcons name="location-off" size={22} color="#8A8173" /><Text style={styles.emptyAddressText}>أضف عنوانًا محفوظًا أولًا للبحث عن مقدمي الخدمة الأقرب إليك.</Text><Pressable accessibilityRole="button" onPress={() => router.push("/profile" as never)} style={({ pressed }) => [styles.addAddressButton, pressed && styles.pressed]}><Text style={styles.addAddressText}>الذهاب إلى حسابي</Text></Pressable></View>}
           <View style={styles.resultsHeading}><View><Text style={styles.resultsTitle}>مقدمو الخدمة الأقرب</Text><Text style={styles.resultsCaption}>يظهر أولًا مقدمو الخدمة المسجلون في التطبيق</Text></View><Text style={styles.sortText}>{ASSISTED_SERVICE_SORT_LABELS[sort]}</Text></View>
           {sortedProviders.map((provider) => <ProviderResultCard key={provider.id} provider={provider} serviceLabel={service.title} specialtyId={service.id} tint={service.surface} />)}
-          {providers.map((provider) => <Pressable key={provider.id} accessibilityRole="button" onPress={() => Alert.alert(provider.name, "سيُضاف عرض الملف الشخصي لمقدم الخدمة والحجز في مرحلة لاحقة.")} style={({ pressed }) => [styles.providerCard, pressed && styles.pressed]}><View style={[styles.providerAvatar, { backgroundColor: service.surface }]}><Text style={[styles.avatarText, { color: service.tint }]}>{provider.initials}</Text></View><View style={styles.providerInfo}><Text style={styles.providerName}>{provider.name}</Text><Text style={styles.providerService}>{service.title}</Text><View style={styles.providerMeta}><View style={styles.metaItem}><MaterialIcons name="star" size={14} color="#C9A961" /><Text style={styles.metaText}>{provider.rating} ({provider.reviewCount})</Text></View><View style={styles.metaItem}><MaterialIcons name="location-on" size={14} color="#6B7B3F" /><Text style={styles.metaText}>{provider.distanceKm} كم</Text></View></View></View><View style={styles.priceBlock}><Text style={styles.price}>{provider.price}</Text><Text style={styles.currency}>ر.س</Text></View></Pressable>)}
+          {providers.map((provider) => <ProviderResultCard key={provider.id} provider={buildDemoProviderAccount(provider, DEMO_SERVICE_KEYS[service.id] ?? service.id)} serviceLabel={service.title} specialtyId={service.id} demoDoctorId={provider.id} tint={service.surface} />)}
         </ScrollView>
         {filterOpen ? <View style={styles.filterMenu}>{SORT_OPTIONS.map((option) => <Pressable key={option} accessibilityRole="button" onPress={() => chooseSort(option)} style={({ pressed }) => [styles.filterOption, sort === option && styles.filterOptionActive, pressed && styles.optionPressed]}><Text style={[styles.filterText, sort === option && styles.filterTextActive]}>{ASSISTED_SERVICE_SORT_LABELS[option]}</Text>{sort === option ? <MaterialIcons name="check" size={17} color="#6B7B3F" /> : null}</Pressable>)}</View> : null}
         <Pressable accessibilityRole="button" accessibilityLabel="فلترة النتائج" onPress={() => setFilterOpen((open) => !open)} style={({ pressed }) => [styles.filterButton, pressed && styles.filterPressed]}><MaterialIcons name="tune" size={22} color="#FFFFFF" /><Text style={styles.filterButtonText}>فلترة</Text></Pressable>

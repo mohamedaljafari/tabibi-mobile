@@ -87,16 +87,16 @@ export default function WalletScreen() {
         <View style={styles.balanceCard}>
           <Text style={styles.balanceLabel}>رصيد المحفظة</Text>
           <Text style={[styles.balanceValue, { color: balanceColor }]}>
-            {summary.balance.toFixed(2)}
+            {summary.balance.toFixed(2)} د.ل
           </Text>
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
-              <Text style={styles.statValueIncoming}>{summary.credit.toFixed(2)}</Text>
+              <Text style={styles.statValueIncoming}>{summary.credit.toFixed(2)} د.ل</Text>
               <Text style={styles.statLabel}>الوارد</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
-              <Text style={styles.statValueOutgoing}>{summary.debit.toFixed(2)}</Text>
+              <Text style={styles.statValueOutgoing}>{summary.debit.toFixed(2)} د.ل</Text>
               <Text style={styles.statLabel}>الصادر</Text>
             </View>
             <View style={styles.statDivider} />
@@ -155,7 +155,7 @@ function EntryRow({ entry }: { entry: WalletLedgerEntry }) {
           { color: isCredit ? "#4E7A3F" : "#B55448" },
         ]}
       >
-        {isCredit ? "+" : "-"}{entry.amount.toFixed(2)}
+        {isCredit ? "+" : "-"}{entry.amount.toFixed(2)} د.ل
       </Text>
     </View>
   );

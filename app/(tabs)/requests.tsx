@@ -86,7 +86,7 @@ export default function RequestsScreen() {
                 role: "provider",
                 type: "request_received",
                 title: "اكتملت الخدمة",
-                body: `أتم المريض ${profile.fullName} الخدمة «${item.services.map((service) => service.serviceName).join("، ")}» بمبلغ ${item.total} ر.س، وسيُقيّمها قريبًا.`,
+                body: `أتم المريض ${profile.fullName} الخدمة «${item.services.map((service) => service.serviceName).join("، ")}» بمبلغ ${item.total} د.ل، وسيُقيّمها قريبًا.`,
                 requestId: item.id,
                 otherPartyName: profile.fullName,
               });
@@ -200,7 +200,7 @@ export default function RequestsScreen() {
           {item.services.map((service) => (
             <View key={service.serviceId} style={styles.serviceRow}>
               <Text style={styles.serviceName}>{service.serviceName}</Text>
-              <Text style={styles.servicePrice}>{service.price} ر.س</Text>
+              <Text style={styles.servicePrice}>{service.price} د.ل</Text>
             </View>
           ))}
         </View>
@@ -221,7 +221,7 @@ export default function RequestsScreen() {
 
         <View style={styles.totalRow}>
           <Text style={styles.totalLabel}>الإجمالي</Text>
-          <Text style={styles.totalValue}>{item.total} ر.س</Text>
+          <Text style={styles.totalValue}>{item.total} د.ل</Text>
         </View>
 
         {item.status === "pending" ? (

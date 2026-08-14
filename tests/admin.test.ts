@@ -43,7 +43,7 @@ const sampleProvider: Omit<ProviderAccount, "id" | "createdAt" | "passwordHash" 
 } = {
   fullName: "د. سارة أحمد",
   role: "طبيب",
-  phone: "0911222333",
+  phone: "091122233",
   status: "pending",
   specializations: ["طب عام"],
   yearsOfExperience: 6,

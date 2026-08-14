@@ -1,48 +1,46 @@
-import { ScrollView, Text, View, TouchableOpacity } from "react-native";
+import { useEffect } from "react";
+import { ActivityIndicator, StyleSheet, View } from "react-native";
+import { router } from "expo-router";
 
-import { ScreenContainer } from "@/components/screen-container";
+import { getPatientProfile } from "@/lib/patient-profile";
 
 /**
- * Home Screen - NativeWind Example
+ * البوابة الرئيسية للتطبيق داخل شريط التابات.
  *
- * This template uses NativeWind (Tailwind CSS for React Native).
- * You can use familiar Tailwind classes directly in className props.
+ * توجّه المستخدم بنفس منطق نقطة الدخول (`app/index.tsx`)، لأن الصفحة الافتراضية
+ * داخل شريط التابات كانت تعرض قالبًا بلا بانر إعلاني ولا شبكة خدمات.
  *
- * Key patterns:
- * - Use `className` instead of `style` for most styling
- * - Theme colors: use tokens directly (bg-background, text-foreground, bg-primary, etc.); no dark: prefix needed
- * - Responsive: standard Tailwind breakpoints work on web
- * - Custom colors defined in tailwind.config.js
+ * - مسجّل ومؤسِّس للبيانات: الصفحة الرئيسية `/home` (البانر الإعلاني وشبكة الخدمات).
+ * - مسجّل وغير مؤسِّس للبيانات: إكمال بيانات الحساب `/profile`.
+ * - غير مسجّل: تسجيل الدخول `/login`.
  */
-export default function HomeScreen() {
+export default function TabHomeGate() {
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const profile = await getPatientProfile();
+      if (!cancelled) {
+        router.replace(
+          (profile
+            ? profile.isSetupComplete
+              ? "/home"
+              : "/profile"
+            : "/login") as never,
+        );
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
-    <ScreenContainer className="p-6">
-      <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
-        <View className="flex-1 gap-8">
-          {/* Hero Section */}
-          <View className="items-center gap-2">
-            <Text className="text-4xl font-bold text-foreground">Welcome</Text>
-            <Text className="text-base text-muted text-center">
-              Edit app/(tabs)/index.tsx to get started
-            </Text>
-          </View>
-
-          {/* Example Card */}
-          <View className="w-full max-w-sm self-center bg-surface rounded-2xl p-6 shadow-sm border border-border">
-            <Text className="text-lg font-semibold text-foreground mb-2">NativeWind Ready</Text>
-            <Text className="text-sm text-muted leading-relaxed">
-              Use Tailwind CSS classes directly in your React Native components.
-            </Text>
-          </View>
-
-          {/* Example Button */}
-          <View className="items-center">
-            <TouchableOpacity className="bg-primary px-6 py-3 rounded-full active:opacity-80">
-              <Text className="text-background font-semibold">Get Started</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </ScrollView>
-    </ScreenContainer>
+    <View style={styles.container}>
+      <ActivityIndicator color="#6B7B3F" size="small" />
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: { alignItems: "center", flex: 1, justifyContent: "center" },
+});

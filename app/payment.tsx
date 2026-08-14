@@ -200,7 +200,7 @@ export default function PaymentScreen() {
             <View style={styles.cards}>
               <View style={styles.amountCard}>
                 <Text style={styles.amountLabel}>{paymentLabel(paymentMethod)}</Text>
-                <Text style={styles.amountValue}>{total.toLocaleString("ar-EG") || "0"} دينار</Text>
+                <Text style={styles.amountValue}>{total.toLocaleString("ar-EG") || "0"} د.ل</Text>
                 <Text style={styles.amountHint}>{paymentHint(paymentMethod)}</Text>
               </View>
 

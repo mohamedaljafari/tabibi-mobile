@@ -19,6 +19,8 @@ import { getProviderRatingSummary, type RatingSummary } from "@/lib/ratings";
 
 export interface ProviderResultCardProps {
   provider: ProviderAccount;
+  /** بطاقة عينة (نموذجية) من دليل ثابت؛ تُوجَّه إلى صفحة التفاصيل عبر معرفها النموذجي. */
+  demoDoctorId?: string;
   /** العنوان الظاهر أسفل الاسم (مثل «تمريض منزلي» أو اسم التخصص المختار) */
   serviceLabel: string;
   /** معرف التخصص الحالي للتوجيه إلى صفحة التفاصيل */
@@ -27,7 +29,7 @@ export interface ProviderResultCardProps {
   tint?: string;
 }
 
-export function ProviderResultCard({ provider, serviceLabel, specialtyId, tint }: ProviderResultCardProps) {
+export function ProviderResultCard({ provider, serviceLabel, specialtyId, demoDoctorId, tint }: ProviderResultCardProps) {
   const price = provider.services[0]?.price ?? 0;
   const hasPhoto = !!provider.photoUri;
   const [summary, setSummary] = useState<RatingSummary | null>(null);
@@ -47,7 +49,7 @@ export function ProviderResultCard({ provider, serviceLabel, specialtyId, tint }
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`${provider.fullName} — ${serviceLabel}`}
-      onPress={() => router.push({ pathname: "/doctor-detail", params: { specialtyId, providerId: provider.id } } as never)}
+      onPress={() => router.push({ pathname: "/doctor-detail", params: { specialtyId, providerId: provider.id, ...(demoDoctorId ? { demoDoctorId } : {}) } } as never)}
       style={({ pressed }) => [styles.card, pressed && styles.pressed]}
     >
       {hasPhoto ? (
@@ -93,7 +95,7 @@ export function ProviderResultCard({ provider, serviceLabel, specialtyId, tint }
       {price > 0 ? (
         <View style={styles.priceBlock}>
           <Text style={styles.price}>{price}</Text>
-          <Text style={styles.currency}>ر.س</Text>
+          <Text style={styles.currency}>د.ل</Text>
         </View>
       ) : null}
     </Pressable>

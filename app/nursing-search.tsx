@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View , Alert } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 
@@ -8,6 +8,7 @@ import { ScreenContainer } from "@/components/screen-container";
 import { getNurses, NURSING_SORT_LABELS, type NursingSort } from "@/lib/nursing-directory";
 import { getPatientProfile, type PatientAddress, type PatientProfile } from "@/lib/patient-profile";
 import { mergeNursingProviders, readProviderAccounts, type ProviderAccount } from "@/lib/provider-registry";
+import { buildDemoProviderAccount } from "@/lib/demo-provider";
 
 const SORT_OPTIONS: NursingSort[] = ["nearest", "rating", "price-high", "price-low"];
 
@@ -121,18 +122,14 @@ export default function NursingSearchScreen() {
           ))}
 
           {nurses.map((nurse) => (
-            <Pressable key={nurse.id} accessibilityRole="button" onPress={() => Alert.alert(nurse.name, "سيُضاف عرض الملف الشخصي لمقدم الخدمة والحجز في مرحلة لاحقة.")} style={({ pressed }) => [styles.nurseCard, pressed && styles.pressed]}>
-              <View style={styles.nurseAvatar}><Text style={styles.avatarText}>{nurse.initials}</Text></View>
-              <View style={styles.nurseInfo}>
-                <Text style={styles.nurseName}>{nurse.name}</Text>
-                <Text style={styles.nurseService}>تمريض منزلي</Text>
-                <View style={styles.nurseMeta}>
-                  <View style={styles.metaItem}><MaterialIcons name="star" size={14} color="#C9A961" /><Text style={styles.metaText}>{nurse.rating} ({nurse.reviewCount})</Text></View>
-                  <View style={styles.metaItem}><MaterialIcons name="location-on" size={14} color="#6B7B3F" /><Text style={styles.metaText}>{nurse.distanceKm} كم</Text></View>
-                </View>
-              </View>
-              <View style={styles.priceBlock}><Text style={styles.price}>{nurse.price}</Text><Text style={styles.currency}>ر.س</Text></View>
-            </Pressable>
+            <ProviderResultCard
+              key={nurse.id}
+              provider={buildDemoProviderAccount(nurse, "nursing")}
+              serviceLabel="تمريض منزلي"
+              specialtyId="nursing"
+              demoDoctorId={nurse.id}
+              tint="#FBF2E2"
+            />
           ))}
         </ScrollView>
 

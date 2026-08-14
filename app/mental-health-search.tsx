@@ -1,13 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View , Alert } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 
 import { ProviderResultCard } from "@/components/provider-result-card";
 import { ScreenContainer } from "@/components/screen-container";
 import { getMentalHealthProvidersForSpecialty, getMentalHealthSpecialty, MENTAL_HEALTH_SORT_LABELS, type MentalHealthSort } from "@/lib/mental-health-directory";
+
+/** ربط معرفات التخصص النفسي بمفاتيح خدمات العرض النموذجية في DEMO_SERVICE_LABELS */
+const DEMO_SERVICE_KEYS: Record<string, string> = {
+  "general-therapy": "general_therapy",
+};
 import { getPatientProfile, type PatientAddress, type PatientProfile } from "@/lib/patient-profile";
 import { mergeMentalHealthProviders, readProviderAccounts, type ProviderAccount } from "@/lib/provider-registry";
+import { buildDemoProviderAccount } from "@/lib/demo-provider";
 
 const SORT_OPTIONS: MentalHealthSort[] = ["nearest", "rating", "price-high", "price-low"];
 
@@ -81,11 +87,14 @@ export default function MentalHealthSearchScreen() {
           ))}
 
           {providers.map((provider) => (
-            <Pressable key={provider.id} accessibilityRole="button" onPress={() => Alert.alert(provider.name, "سيُضاف عرض الملف الشخصي للمختص والحجز في مرحلة لاحقة.")} style={({ pressed }) => [styles.providerCard, pressed && styles.pressed]}>
-              <View style={styles.providerAvatar}><Text style={styles.avatarText}>{provider.initials}</Text></View>
-              <View style={styles.providerInfo}><Text style={styles.providerName}>{provider.name}</Text><Text style={styles.providerSpecialty}>{specialty.title}</Text><View style={styles.providerMeta}><View style={styles.metaItem}><MaterialIcons name="star" size={14} color="#C9A961" /><Text style={styles.metaText}>{provider.rating} ({provider.reviewCount})</Text></View><View style={styles.metaItem}><MaterialIcons name="location-on" size={14} color="#6B7B3F" /><Text style={styles.metaText}>{provider.distanceKm} كم</Text></View></View></View>
-              <View style={styles.priceBlock}><Text style={styles.price}>{provider.price}</Text><Text style={styles.currency}>ر.س</Text></View>
-            </Pressable>
+            <ProviderResultCard
+              key={provider.id}
+              provider={buildDemoProviderAccount(provider, DEMO_SERVICE_KEYS[specialty.id] ?? specialty.id)}
+              serviceLabel={specialty.title}
+              specialtyId={specialty.id}
+              demoDoctorId={provider.id}
+              tint="#F2EDF4"
+            />
           ))}
         </ScrollView>
 
