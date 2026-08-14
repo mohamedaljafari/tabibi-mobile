@@ -332,3 +332,17 @@ GH_TOKEN (تكامل Manus-GitHub) يستطيع رؤية المستودعين (N
 رفع ci.yml عبر gh api (JSON) رُفض بـ 403 Resource not accessible: تكامل manus-connector لديه Contents: R/W لكنه محظور صراحة من touching workflow files بدون workflows permission. gh api app يعيد 401 (لا JWT). الخيارات المتبقية: (1) دفع ci.yml كنص عادي عبر remote مع git (git push يرفض workflow files أيضًا — مجرّب سابقًا برسالة "refusing to allow a GitHub App to create or update workflow")، (2) استخدام GITHUB_PAT بعد أن يعدّل المستخدم وصول المستودعات في التوكن (طلبنا ذلك)، (3) التسليم بدون workflow تلقائي مع README + Releases.
 القرار: نجرب أخيرًا دفع ci.yml عبر git بـ GH_TOKEN مباشرة مع --allow-empty? لا — الحل الوحيد الموثوق الآن: PAT بـ repo scope (يتطلب تعديلًا من المستخدم). بديل ذكي: commit-push عبر gh في مستودع فارغ؟ لا.
 متبقي للمرحلة: README عربي للمستودعين + APK releases + تسليم.
+
+
+### حالة المرحلة GitHub (03:20)
+- الكود مرفوع: tabibi-mobile (7397137) وtabibi-partner (24afc00) — كلاهما خاصة، remote=github، token=GH_TOKEN (تكامل manus-connector، محتوى R/W لكن workflow محظور)
+- ملفات CI جاهزة: /tmp/ci.yml.mobile (للمريض) و/tmp/ci.yml.partner (للشريك) — يجب نسخه مرة أخرى إلى .github/workflows/ci.yml قبل أي دفع مستقبلي، ثم الدفع (سيرفض إن كان التكامل بلا صلاحية workflow حتى ينشّطها المستخدم من Settings → Applications → Manus connector → Repository access: tabibi-*)
+- المرحلة الحالية (phase 2): كتابة README.md عربي للمستودعين (tabibi-mobile وtabibi-partner) ثم commit + push
+- phase 3: APK — لا نبني APK يدويًا في sandbox (إرهاق موارد + policy: ينشأ APK عبر زر Publish في UI). في README نذكر ذلك، وننشئ GitHub Release مبدئي من الكود فقط إن أمكن (بدون APK) أو ننبّه المستخدم.
+- phase 4: التسليم
+
+
+### حالة GitHub (03:30)
+- README عربي كُتب ودُفع: tabibi-mobile README (commit e3bb18f)، tabibi-partner README (commit 0e3a842). HEAD: المريض e3bb18f، الشريك 0e3a842.
+- مرحلة 3 (APK/Releases): لن نبني APK يدويًا (سياسة المنصة: APK عبر زر Publish في UI؛ البناء اليدوي في sandbox ممنوع/إرهاق موارد). الخطة: إنشاء GitHub Release مبدئي (v1.0.0) من كود HEAD في المستودعين (source code zip تلقائي) مع ملاحظة أن APK يُبنى عبر Publish — لا حاجة لتحميل ملفات APK يدويًا. إن أراد المستخدم APK لاحقًا: استخدام Publish من بطاقة المشروع ثم تنزيله.
+- بعد release: تحديث todo.md (كلا الشريك والمريض)، ثم checkpoint للمريض وتسليم نهائي مع روابط المستودعين + الـ releases + تعليمات صلاحية workflow.
