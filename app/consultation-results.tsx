@@ -12,13 +12,28 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import * as Haptics from "expo-haptics";
+
+function PLATFORM_DATE_OPTIONS(): { date: string; label: string }[] {
+  const options: { date: string; label: string }[] = [];
+  const now = new Date();
+  const dayLabels = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
+  for (let offset = 1; offset <= 14; offset += 1) {
+    const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset);
+    options.push({
+      date: date.toISOString().slice(0, 10),
+      label: `${dayLabels[date.getDay()]} ${date.getDate()}/${date.getMonth() + 1}`,
+    });
+  }
+  return options;
+}
 import { ScreenContainer } from "@/components/screen-container";
-import { DOCTOR_SPECIALTIES, getDoctorSpecialty } from "@/lib/doctor-directory";
+import { getDoctorSpecialty } from "@/lib/doctor-directory";
 import { formatYearsOfExperience } from "@/lib/provider-registry";
 import {
   readConsultationDoctorsBySpecialty,
@@ -26,7 +41,8 @@ import {
   type ConsultationType,
 } from "@/lib/consultation-doctors";
 import { getPatientProfile } from "@/lib/patient-profile";
-import { submitConsultationRequest, type ConsultationRequest } from "@/lib/consultation-requests";
+import { createConsultationRequest, type ConsultationMode } from "@/lib/consultation-requests";
+
 
 type SortKey = "nearest" | "rating" | "price-low" | "price-high";
 
@@ -68,6 +84,9 @@ export default function ConsultationResultsScreen() {
     return 0;
   });
 
+  const [chosenDoctor, setChosenDoctor] = useState<ConsultationDoctor | null>(null);
+  const [selectedMode, setSelectedMode] = useState<ConsultationMode>("instant");
+
   async function handleRequest(doctor: ConsultationDoctor) {
     if (Platform.OS !== "web") {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -78,47 +97,72 @@ export default function ConsultationResultsScreen() {
       router.push("/login" as never);
       return;
     }
+    setChosenDoctor(doctor);
+  }
+
+  const submitConsultation = async () => {
+    if (!chosenDoctor) return;
+    const profile = await getPatientProfile();
+    if (!profile?.fullName || !profile?.phone) {
+      Alert.alert("مطلوب تسجيل الدخول", "يرجى تسجيل الدخول أو استكمال بيانات حسابك أولًا.");
+      return;
+    }
     const price = isInternational
-      ? (doctor as Extract<ConsultationDoctor, { consultationType: "international" }>).price
+      ? (chosenDoctor as Extract<ConsultationDoctor, { consultationType: "international" }>).price
       : 250;
     const doctorName = isInternational
-      ? (doctor as Extract<ConsultationDoctor, { consultationType: "international" }>).name
-      : (doctor as Extract<ConsultationDoctor, { consultationType: "local" }>).fullName;
+      ? (chosenDoctor as Extract<ConsultationDoctor, { consultationType: "international" }>).name
+      : (chosenDoctor as Extract<ConsultationDoctor, { consultationType: "local" }>).fullName;
     const specializationLabel = isInternational
-      ? (doctor as Extract<ConsultationDoctor, { consultationType: "international" }>).specialty
+      ? (chosenDoctor as Extract<ConsultationDoctor, { consultationType: "international" }>).specialty
       : specialty.title;
 
     setSending(true);
     try {
-      const request: ConsultationRequest = {
-        id: `con_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+      let scheduledAt: number | undefined;
+      if (selectedMode === "scheduled" && scheduledDate && scheduledTime) {
+        const [hours, minutes] = scheduledTime.split(":").map((part) => parseInt(part, 10));
+        const date = new Date(scheduledDate);
+        if (!Number.isNaN(hours) && !Number.isNaN(minutes)) {
+          date.setHours(hours, minutes, 0, 0);
+          scheduledAt = date.getTime();
+        }
+      }
+      if (selectedMode === "scheduled" && !scheduledAt) {
+        Alert.alert("اختر موعد الاستشارة", "يرجى اختيار تاريخ ووقت للاستشارة أولًا.");
+        setSending(false);
+        return;
+      }
+      const request = await createConsultationRequest({
         type: consultationType,
-        patientId: profile.phone,
+        mode: selectedMode,
+        scheduledAt,
+        patientId: `${profile.fullName}-${profile.phone}`,
         patientName: profile.fullName,
         patientPhone: profile.phone,
         specialtyLabel: specializationLabel,
-        doctorId: doctor.id,
+        doctorId: chosenDoctor.id,
         doctorName,
+        externalDoctorName: isInternational ? doctorName : undefined,
+        externalDoctorCountry: isInternational
+          ? (chosenDoctor as Extract<ConsultationDoctor, { consultationType: "international" }>).country
+          : undefined,
         price,
-        status: "pending",
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      };
-      await submitConsultationRequest(request);
-      Alert.alert(
-        "تم إرسال طلب الاستشارة",
-        `طلبك لاستشارة ${doctorName} (${specializationLabel}) أرسل بنجاح. سيتواصل معك الطبيب عند قبوله للطلب.`,
-        [
-          {
-            text: "تم",
-            onPress: () => router.push({ pathname: "/requests" } as never),
-          },
-        ],
-      );
+      });
+      setSending(false);
+      router.push({
+        pathname: "/consultation-payment" as never,
+        params: { requestId: request.id, doctorName } as never,
+      });
     } finally {
       setSending(false);
     }
-  }
+  };
+
+  const [scheduledDate, setScheduledDate] = useState("");
+  const [scheduledTime, setScheduledTime] = useState("");
+
+
 
   return (
     <ScreenContainer edges={["top", "bottom", "left", "right"]}>
@@ -185,7 +229,7 @@ export default function ConsultationResultsScreen() {
                 : 250;
               const initials = isExt
                 ? (doctor as Extract<ConsultationDoctor, { consultationType: "international" }>).initials
-                : name.split(" ").filter(Boolean).slice(0, 2).map((part) => part[0]).join("");
+                : name.split(" ").filter(Boolean).slice(0, 2).map((part: string) => part[0]).join("");
               const country = isExt
                 ? (doctor as Extract<ConsultationDoctor, { consultationType: "international" }>).country
                 : "ليبيا";
@@ -230,6 +274,107 @@ export default function ConsultationResultsScreen() {
           </View>
         )}
       </ScrollView>
+
+      {chosenDoctor ? (
+        <View style={styles.modalOverlay}>
+          <View style={styles.modal}>
+            <Text style={styles.modalTitle}>كيف تريد الاستشارة؟</Text>
+            <View style={styles.modeRow}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setSelectedMode("instant")}
+                style={({ pressed }) => [
+                  styles.modeOption,
+                  selectedMode === "instant" && styles.modeOptionActive,
+                  pressed && styles.pressed,
+                ]}>
+                <MaterialIcons name="bolt" size={16} color={selectedMode === "instant" ? "#FFFDF8" : "#6B7B3F"} />
+                <Text style={[styles.modeText, selectedMode === "instant" && styles.modeTextActive]}>
+                  استشارة فورية الآن
+                </Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setSelectedMode("scheduled")}
+                style={({ pressed }) => [
+                  styles.modeOption,
+                  selectedMode === "scheduled" && styles.modeOptionActive,
+                  pressed && styles.pressed,
+                ]}>
+                <MaterialIcons name="event" size={16} color={selectedMode === "scheduled" ? "#FFFDF8" : "#6B7B3F"} />
+                <Text style={[styles.modeText, selectedMode === "scheduled" && styles.modeTextActive]}>
+                  حجز موعد لاحق
+                </Text>
+              </Pressable>
+            </View>
+
+            {selectedMode === "scheduled" ? (
+              <View style={styles.scheduleSection}>
+                <Text style={styles.scheduleLabel}>اختر التاريخ</Text>
+                <View style={styles.dateChips}>
+                  {PLATFORM_DATE_OPTIONS().map((option) => (
+                    <Pressable
+                      key={option.date}
+                      accessibilityRole="button"
+                      onPress={() => setScheduledDate(option.date)}
+                      style={({ pressed }) => [
+                        styles.dateChip,
+                        scheduledDate === option.date && styles.dateChipActive,
+                        pressed && styles.pressed,
+                      ]}>
+                      <Text style={[styles.dateChipText, scheduledDate === option.date && styles.dateChipTextActive]}>
+                        {option.label}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <Text style={styles.scheduleLabel}>اختر الوقت</Text>
+                <View style={styles.timeInputs}>
+                  <TextInput
+                    style={styles.timeInput}
+                    value={scheduledTime}
+                    onChangeText={setScheduledTime}
+                    placeholder="14:30"
+                    placeholderTextColor="#B9AFA0"
+                    keyboardType="numeric"
+                    returnKeyType="done"
+                  />
+                  <Text style={styles.timeHint}>بصيغة الساعة:الدقائق مثل 14:30</Text>
+                </View>
+              </View>
+            ) : null}
+
+            <View style={styles.modalNote}>
+              <MaterialIcons name="payment" size={14} color="#6B7B3F" />
+              <Text style={styles.modalNoteText}>
+                الدفع للاستشارات إلكتروني فقط قبل بدء الاستشارة، ولا يتاح الدفع النقدي.
+              </Text>
+            </View>
+
+            <View style={styles.modalButtons}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setChosenDoctor(null)}
+                style={({ pressed }) => [styles.cancelButton, pressed && styles.pressed]}>
+                <Text style={styles.cancelButtonText}>إلغاء</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                disabled={sending}
+                onPress={() => submitConsultation()}
+                style={({ pressed }) => [
+                  styles.confirmButton,
+                  pressed && styles.pressed,
+                  sending && styles.disabled,
+                ]}>
+                <Text style={styles.confirmButtonText}>
+                  {sending ? "جاري الإرسال..." : "إرسال الطلب والدفع"}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      ) : null}
     </ScreenContainer>
   );
 }
@@ -326,4 +471,97 @@ const styles = StyleSheet.create({
   requestButtonText: { color: "#FFFDF8", fontSize: 13, fontWeight: "800" },
   disabled: { opacity: 0.55 },
   pressed: { opacity: 0.76, transform: [{ scale: 0.98 }] },
+  modalOverlay: {
+    backgroundColor: "rgba(30, 34, 24, 0.6)",
+    justifyContent: "center",
+    padding: 24,
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    top: 0,
+  },
+  modal: {
+    backgroundColor: "#FFFDF8",
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: "#E8E0D1",
+    padding: 18,
+  },
+  modalTitle: { color: "#465132", fontSize: 16, fontWeight: "800", marginBottom: 12, textAlign: "right" },
+  modeRow: { flexDirection: "row-reverse", gap: 10, marginBottom: 12 },
+  modeOption: {
+    alignItems: "center",
+    backgroundColor: "#EFF2E6",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E4DCCB",
+    flexDirection: "row-reverse",
+    flex: 1,
+    gap: 6,
+    justifyContent: "center",
+    paddingVertical: 10,
+  },
+  modeOptionActive: { backgroundColor: "#6B7B3F", borderColor: "#6B7B3F" },
+  modeText: { color: "#5A624B", fontSize: 12, fontWeight: "800" },
+  modeTextActive: { color: "#FFFDF8" },
+  scheduleSection: { marginBottom: 12 },
+  scheduleLabel: { color: "#786F61", fontSize: 12, fontWeight: "800", marginBottom: 8, textAlign: "right" },
+  dateChips: { flexDirection: "row-reverse", flexWrap: "wrap", gap: 8, marginBottom: 12 },
+  dateChip: {
+    backgroundColor: "#FFFDF8",
+    borderColor: "#E8E0D1",
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  dateChipActive: { backgroundColor: "#6B7B3F", borderColor: "#6B7B3F" },
+  dateChipText: { color: "#786F61", fontSize: 10, fontWeight: "700" },
+  dateChipTextActive: { color: "#FFFDF8" },
+  timeInputs: { alignItems: "flex-end", gap: 4 },
+  timeInput: {
+    backgroundColor: "#FFFDF8",
+    borderColor: "#E8E0D1",
+    borderRadius: 12,
+    borderWidth: 1,
+    color: "#465132",
+    fontSize: 14,
+    fontWeight: "700",
+    padding: 10,
+    textAlign: "center",
+    width: 100,
+  },
+  timeHint: { color: "#9A907E", fontSize: 9, lineHeight: 13 },
+  modalNote: {
+    alignItems: "center",
+    backgroundColor: "#EFF2E6",
+    borderRadius: 12,
+    flexDirection: "row-reverse",
+    gap: 8,
+    marginBottom: 14,
+    padding: 10,
+  },
+  modalNoteText: { color: "#5A624B", flex: 1, fontSize: 11, fontWeight: "700", lineHeight: 16, textAlign: "right" },
+  modalButtons: { flexDirection: "row-reverse", gap: 10 },
+  cancelButton: {
+    alignItems: "center",
+    backgroundColor: "#F0EBDD",
+    borderColor: "#E4DCCB",
+    borderRadius: 14,
+    borderWidth: 1,
+    flex: 1,
+    justifyContent: "center",
+    paddingVertical: 11,
+  },
+  cancelButtonText: { color: "#786F61", fontSize: 12, fontWeight: "800" },
+  confirmButton: {
+    alignItems: "center",
+    backgroundColor: "#6B7B3F",
+    borderRadius: 14,
+    flex: 1,
+    justifyContent: "center",
+    paddingVertical: 11,
+  },
+  confirmButtonText: { color: "#FFFDF8", fontSize: 12, fontWeight: "800" },
 });
