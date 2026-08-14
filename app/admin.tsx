@@ -62,6 +62,7 @@ import {
   readExternalDoctors,
   removeExternalDoctor,
   toggleExternalDoctor,
+  updateExternalDoctor,
   type ExternalConsultationDoctor,
 } from "@/lib/consultation-doctors";
 
@@ -189,6 +190,19 @@ function InternationalDoctorsPanel() {
   const [experience, setExperience] = useState("");
   const [price, setPrice] = useState("");
   const [formError, setFormError] = useState("");
+  const [editingDoctor, setEditingDoctor] = useState<ExternalConsultationDoctor | null>(null);
+
+  useEffect(() => {
+    if (editingDoctor) {
+      setName(editingDoctor.name);
+      setCountry(editingDoctor.country);
+      setSpecialty(editingDoctor.specialty);
+      setExperience(String(editingDoctor.experience));
+      setPrice(String(editingDoctor.price));
+    } else {
+      resetForm();
+    }
+  }, [editingDoctor]);
 
   const load = useCallback(async () => {
     setDoctors(await readExternalDoctors());
@@ -223,6 +237,22 @@ function InternationalDoctorsPanel() {
     }
     if (!Number.isFinite(priceNumber) || priceNumber <= 0) {
       setFormError("سعر الاستشارة يجب أن يكون رقمًا أكبر من صفر.");
+      return;
+    }
+    if (editingDoctor) {
+      const next = await updateExternalDoctor(editingDoctor.id, {
+        name: trimmedName,
+        country: trimmedCountry,
+        specialty: trimmedSpecialty,
+        experience: Math.round(experienceNumber),
+        price: Math.round(priceNumber),
+        initials: makeInitials(trimmedName),
+      });
+      setDoctors(next);
+      setEditingDoctor(null);
+      if (Platform.OS !== "web") {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
       return;
     }
     const next = await addExternalDoctor({
@@ -284,7 +314,9 @@ function InternationalDoctorsPanel() {
       </Text>
 
       <View style={styles.formCard}>
-        <Text style={styles.formSectionTitle}>إضافة طبيب خارجي جديد</Text>
+        <Text style={styles.formSectionTitle}>
+          {editingDoctor ? `تعديل بيانات «${editingDoctor.name}»` : "إضافة طبيب خارجي جديد"}
+        </Text>
         <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="الاسم (مثل: د. خالد المصري)" placeholderTextColor="#B5AD9C" returnKeyType="done" autoCapitalize="none" autoComplete="off" />
         <View style={styles.positionRow}>
           <TextInput style={[styles.input, { flex: 1 }]} value={country} onChangeText={setCountry} placeholder="الدولة (مثل: مصر)" placeholderTextColor="#B5AD9C" returnKeyType="done" autoCapitalize="none" autoComplete="off" />
@@ -296,11 +328,11 @@ function InternationalDoctorsPanel() {
         </View>
         {formError ? <Text style={styles.formError}>{formError}</Text> : null}
         <View style={styles.formButtonsRow}>
-          <TouchableOpacity style={styles.secondaryButton} onPress={resetForm} activeOpacity={0.8}>
-            <Text style={styles.secondaryButtonText}>مسح الحقول</Text>
+          <TouchableOpacity style={styles.secondaryButton} onPress={() => setEditingDoctor(null)} activeOpacity={0.8}>
+            <Text style={styles.secondaryButtonText}>{editingDoctor ? "إلغاء التعديل" : "مسح الحقول"}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.primaryButton} onPress={() => void submitDoctor()} activeOpacity={0.8}>
-            <Text style={styles.primaryButtonText}>إضافة الطبيب</Text>
+            <Text style={styles.primaryButtonText}>{editingDoctor ? "حفظ التعديل" : "إضافة الطبيب"}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -321,6 +353,7 @@ function InternationalDoctorsPanel() {
             </View>
             <Text style={styles.cardSubtitle}>{doctor.price.toLocaleString("ar-EG")} د.ل للاستشارة الواحدة</Text>
             <View style={styles.actionRow}>
+              <ActionChip label="تعديل" color={OLIVE} disabled={false} onPress={() => setEditingDoctor(doctor)} />
               <ActionChip label={doctor.enabled ? "إيقاف" : "تفعيل"} color={doctor.enabled ? "#9A8159" : "#4E7A3F"} disabled={false} onPress={() => confirmToggle(doctor, !doctor.enabled)} />
               <ActionChip label="حذف" color="#B55448" disabled={false} onPress={() => confirmRemove(doctor)} />
             </View>

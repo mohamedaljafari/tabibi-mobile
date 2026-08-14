@@ -87,3 +87,69 @@ ProviderAccount ليس فيه deliveryMode. حقل التوفر هو availabilit
 3. webdev_save_checkpoint ثم تسليم.
 4. لا حاجة للرفع إلى GitHub هنا — المستخدم رفع سابقًا يدويًا؛ لكن يمكن الإشارة له.
 5. الطلبات النهائية في todo.md (المراحل الجديدة) يجب وضعها [x] عند الانتهاء: ربط الاستشارات بالدردشة، الفوري/الموعد، الدفع الإلكتروني المسبق للاستشارات، inferDeliveryMode، لوحة أطباء الخارج، بطاقة الاستشارة في طلباتي.
+
+## حالة المشروع النهائية (بعد المرحلة الأخيرة 14 أغسطس مساءً 3)
+المرحلة السابقة (دشرنة الاستشارات) أُنجزت وحُفظت في checkpoint 1ce4c682، وtodo.md محدّث كله [x] حتى نهاية «مرحلة ربط الاستشارات بالدردشة وحجز المواعيد».
+
+### الاقتراحات المعتمدة الجديدة (todo.md أسفل الملف):
+1. إشعار للمريض عند بدء موعد الاستشارة المحجوز لاحقًا.
+2. زر «إتمام الاستشارة» في تطبيق الشريك ينهي الاستشارة (consultation → completed) ويطلب التقييم من المريض.
+3. تعديل بيانات الطبيب الخارجي من لوحة التحكم (admin.tsx InternationalDoctorsPanel).
+4. تحميل تطبيق طبيب شريك ولوحة التحكم على GitHub (المستودعات موجودة بالفعل في حساب المستخدم — tabibi-partner موجود في /home/ubuntu/tabibi-partner، admin لوحته داخل tabibi-mobile أو مستودع منفصل؛ يجب التحقق بـ gh repo list).
+5. تسليم ملفات التطبيقين للتنزيل على جهاز المستخدم (إرفاق نسخة مضغوطة أو روابط المستودعات).
+
+### حقول ConsultationRequest (lib/consultation-requests.ts):
+id, type(local|international), mode(instant|scheduled), scheduledAt?, externalDoctorName/Country?, patientId/Name/Phone, specialtyLabel, doctorId, doctorName, price, status(pending/accepted/rejected/completed/cancelled), paymentStatus(payment_pending/confirmed), paymentConfirmedAt?, notes?, createdAt, updatedAt.
+
+### دوال متاحة:
+- updateConsultationRequest(id, patch)، confirmConsultationPayment(id)، acceptConsultationRequest(id, doctorId, doctorName) يفتح Thread عبر openThread من lib/chat.ts (params: requestId, patientId, patientName, providerId, providerName).
+- الإشعارات: createNotification من lib/notifications.ts، وأنواع إشعارات متفق عليها مع الشريك (request_received, request_accepted, payment_confirmed, received_rating...).
+
+### ملفات رئيسية معروفة:
+- app/consultation-results.tsx (شاشة نتائج + اختيار فوري/موعد)، app/consultation-payment.tsx (دفع إلكتروني مسبق).
+- app/(tabs)/requests.tsx (طلباتي: بطاقات خدمات + استشارات)، app/chat.tsx (دردشة مشتركة للطلبات والاستشارات المقبولة).
+- app/admin.tsx: تبويب «أطباء الخارج» = InternationalDoctorsPanel (إضافة/تفعيل/إيقاف/حذف، بدون رقم هاتف) — يحتاج إضافة تعديل.
+- lib/provider-registry.ts: inferDeliveryMode (online/home/both).
+- lib/consultation-doctors.ts: readExternalDoctors/update غير موجود — يجب إضافة updateExternalDoctor.
+
+### GitHub:
+- gh CLI مهيأ بحساب المستخدم. المستودعات المنشأة سابقًا: tabibi-mobile + tabibi-partner (+ admin إن كان منفصلًا). gh repo list للتحقق.
+- CI: vitest.config.ts يحمل env + ADMIN_PIN يُمرَّر كسر.
+
+## تقدم تنفيذ الاقتراحات الثلاثة (الحالي)
+### منجز:
+1. lib/consultation-requests.ts: أُضيف حقل completedAt? للنوع، ودوال completeConsultationRequest(id) و readConsultationRequest(id) و notifyConsultationStarted(request, doctorName) (ترسل إشعار consultation_started للمريض عبر createNotification، باستخدام import type { Notification as LocalNotification } لتفادي تعارض اسم نوع Notification مع expo-notifications).
+2. lib/notifications.ts: أُضيف "consultation_started" إلى NotificationType.
+### متبقٍ:
+- إشعار البدء: استدعاء notifyConsultationStarted من طرف الشريك عند «بدء الاستشارة». يجب التحقق: هل لدى الشريك وصول لطلبات الاستشارات؟ الشريك لديه incoming-requests.ts للخدمات فقط. يمكن للشريك قبول الاستشارات من readConsultationRequests (مستودع مشترك عبر نفس مفاتيح التخزين — tabibi-partner يقرأ نفس مفاتيح tabibi-mobile). يحتاج تطبيق الشريك: عرض طلبات الاستشارات له (مقبولة) مع زر «بدء الاستشارة» (إشعار) و«إتمام الاستشارة» (completeConsultationRequest). يجب إضافة readConsultationRequests/completeConsultationRequest إلى tabibi-partner عبر نسخ المكتبات المشتركة (ملاحظة: المفاتيح مشتركة لكن الملفات مستنسخة في كل مشروع).
+- تعديل الطبيب الخارجي: admin.tsx InternationalDoctorsPanel — إضافة updateExternalDoctor في lib/consultation-doctors.ts ونافذة تعديل في اللوحة.
+- ثم: pnpm check + pnpm test في tabibi-mobile، checkpoint، ثم GitHub (gh repo list للتحقق من وجود tabibi-partner وadmin)، تسليم ملفات للتنزيل (git archive أو zip من الغيت).
+### ملاحظات تقنية:
+- TS نظيف حاليًا. اختبارات tabibi-mobile: 157 ناجحة.
+- مستودعات GitHub للمستخدم موجودة مسبقًا (tabibi-mobile + tabibi-partner + admin حسب السجل السابق).
+
+## تقدم (تابع): اقتراحات ثلاثة — حالة ما بعد التعديلات
+- تمت إضافة قسم «الاستشارات» في /home/ubuntu/tabibi-partner/app/(tabs)/requests.tsx: groupConsultationsByStatus + consultationStatuses + render بطاقات (patientName + externalDoctorName، specialtyLabel، الموعد formatScheduledAt، شريحة دفع mode/price/paymentStatus، أزرار: الدردشة / بدء الاستشارة (notifyConsultationStarted) / إتمام الاستشارة (completeConsultationRequest + إشعار request_completed للمريض الذي يطلب تقييمه)). ملاحظة: يجب التأكد أن «request_completed» مقبول في NotificationType للطرفين — إن لم يكن، أضفه أو استخدم «received_rating» لا — الأفضل إضافته إن لم يوجد.
+- استيرادات الشريك الآن تشمل consultation-requests (نُسخت المكتبتان من tabibi-mobile إلى tabibi-partner/lib/).
+- متبقٍ: 1) التحقق من نوع إشعار request_completed في tabibi-partner/lib/notifications.ts (إن غائب أضف «consultation_completed» بدلًا منه أو أضف request_completed لكلا الملفين). 2) إضافة إشعار تلقائي عند إتمام الاستشارة (تم فعله في completeConsultation). 3) تعديل الطبيب الخارجي في admin.tsx (tabibi-mobile): إضافة updateExternalDoctor إلى tabibi-mobile/lib/consultation-doctors.ts ونافذة تعديل في InternationalDoctorsPanel (فتح نموذج تعديل بنفس حقول الإضافة: الاسم/الدولة/التخصص/الخبرة/السعر). 4) pnpm check + test في tabibi-mobile، ثم checkpoint، ثم GitHub: gh repo list (التحقق tabibi-partner + tabibi-admin أو admin داخل tabibi-mobile حسب ما ذكره المستخدم سابقًا «التطبيقان ولوحة التحكم»)، ثم git archive/zip وتسليم.
+
+## حالة ما بعد إصلاحات الشريك (05:43)
+تم إصلاح TypeScript في tabibi-partner: أعيدت كتابة lib/consultation-doctors.ts لتعمل دون provider-registry (محلي = حساب الشريك نفسه، خارجيون من CONSULTATION_STORAGE_KEY)، وأزيل تكرار PAYMENT_METHOD_LABELS من app/(tabs)/requests.tsx (سطر 98 السابق). chat.tsx بالشريك يدعم الآن معرف استشارة (readConsultationRequest) مع رأس محادثة consultationHint. الاختبارات: المريض 157/158، الشريك 31/31 ناجحة، TypeScript نظيف في التطبيقين.
+
+متبقٍ قبل التسليم:
+1. لوحة التحكم admin.tsx (tabibi-mobile): تبويب «أطباء الخارج» — إضافة updateExternalDoctor + نافذة تعديل بيانات (اسم/دولة/تخصص/خبرة/سعر) — هذا أحد الاقتراحات الثلاثة المعتمدة.
+2. إضافة إشعار للمريض عند إتمام الشريك للاستشارة (request_completed موجود في tabibi-partner، تأكد من تسميته في إشعار المريض).
+3. checkpoint في tabibi-mobile، ثم GitHub: gh repo list (مستودع partner وربما admin حسب ما أنشئ سابقًا)، رفع آخر نسخة من tabibi-partner (المستخدم طلب رفعه، وإن لم يكن مستودعه موجودًا أنشئ tabibi-partner --private وأضف remote وأرفع). ثم zip كامل tabibi-partner للتنزيل.
+4. تسليم: رسالة result مع نسخ المشروع manus-webdev://checkpoint.
+
+## حالة 05:44 (الأخيرة قبل ضغط السياق)
+اكتمل الاقتراح الثالث (تعديل الطبيب الخارجي) في admin.tsx: زر «تعديل» + نموذج تعديل بنفس حقول الإضافة عبر updateExternalDoctor (أُضيفت للمكتبة في tabibi-mobile/lib/consultation-doctors.ts وللاستيراد في admin.tsx). TypeScript نظيف في tabibi-mobile.
+
+الاقتراحان الأول والثاني (إشعار بدء الموعد notifyConsultationStarted + إتمام الاستشارة completeConsultationRequest مع إشعار للمريض) أُنفذا سابقًا في lib/consultation-requests.ts (المريض) وتبويب الاستشارات في requests.tsx (الشريك) مع types في notifications.ts للطرفين.
+
+متبقٍ:
+1. التحقق من أن إشعار إتمام الاستشارة يصل للمريض: في requests.tsx بالشريك عند completeConsultationRequest يُستخدم إشعار — تأكد من النوع الصحيح في إشعارات المريض (createNotification للطرف patient).
+2. فحص أن toggleExternalDoctor(id, enabled) متوافق مع استدعاء admin.tsx القديم (نعم، نفس التوقيع).
+3. pnpm check + pnpm test في tabibi-mobile، webdev_save_checkpoint.
+4. GitHub: gh repo list لمعرفة المستودعات. رفع tabibi-partner: أنشئ مستودع tabibi-partner --private، أضف remote origin، ارفع كاملاً. ثم zip (/home/ubuntu/tabibi-partner) للتنزيل — أرسل كملف مرفق.
+5. تسليم result مع manus-webdev://checkpoint.

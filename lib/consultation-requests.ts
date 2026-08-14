@@ -7,6 +7,7 @@
  */
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { ConsultationType } from "./consultation-doctors";
+import type { Notification as LocalNotification } from "./notifications";
 
 export type ConsultationRequestStatus = "pending" | "accepted" | "rejected" | "completed" | "cancelled";
 
@@ -39,6 +40,7 @@ export type ConsultationRequest = {
   /** حالة الدفع: payment_pending حتى يدفع المريض إلكترونيًا، ثم confirmed */
   paymentStatus: ConsultationPaymentStatus;
   paymentConfirmedAt?: number;
+  completedAt?: number;
   notes?: string;
   createdAt: number;
   updatedAt: number;
@@ -145,16 +147,61 @@ export async function cancelConsultationRequest(id: string): Promise<Consultatio
 }
 
 /**
- * قبول طلب الاستشارة وفتح محادثة مع مقدم الخدمة.
- * قاعدة: الدردشة لا تفتح إلا بعد القبول، سواء كان مقدم الخدمة
- * محليًا أو طبيبًا خارج ليبيا مسجلًا يدويًا من لوحة التحكم.
+ * إتمام الاستشارة: يحوّل حالتها إلى completed.
+ * يُستخدم من مقدم الخدمة (الشريك) عند انتهاء موعد الاستشارة،
+ * فيُقفل الموضوع وتُطلب التقييم من المريض.
  */
+export async function completeConsultationRequest(id: string): Promise<ConsultationRequest | null> {
+  const all = await readConsultationRequests();
+  const index = all.findIndex((request) => request.id === id);
+  if (index === -1) return null;
+  const request = all[index];
+  all[index] = {
+    ...request,
+    status: "completed" as ConsultationRequestStatus,
+    completedAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+  await writeJson(CONSULTATION_REQUESTS_KEY, all);
+  return all[index];
+}
+
+/** قراءة طلب استشارة واحد بمعرفه */
+export async function readConsultationRequest(id: string): Promise<ConsultationRequest | null> {
+  const all = await readConsultationRequests();
+  return all.find((request) => request.id === id) ?? null;
+}
+
+/**
+ * إشعار المريض عند بدء موعد الاستشارة المحجوز لاحقًا.
+ * تُستدعى من الشريك عند فتح جلسة الاستشارة في الموعد المتفق عليه.
+ */
+export async function notifyConsultationStarted(
+  request: ConsultationRequest,
+  doctorName: string,
+): Promise<LocalNotification | null> {
+  try {
+    const { createNotification } = await import("./notifications");
+    return await createNotification({
+      recipientId: request.patientId,
+      role: "patient",
+      type: "consultation_started",
+      requestId: request.id,
+      otherPartyName: doctorName,
+      title: "بدأت الاستشارة",
+      body: `بدأ الطبيب ${doctorName} جلسة الاستشارة في الموعد المحدد. افتح الدردشة الآن.`,
+    });
+  } catch {
+    return null;
+  }
+}
+
 /**
  * قبول طلب الاستشارة وفتح محادثة مع مقدم الخدمة.
  * قاعدة: الدردشة لا تفتح إلا بعد القبول، سواء كان مقدم الخدمة
  * محليًا أو طبيبًا خارج ليبيا مسجلًا يدويًا من لوحة التحكم.
  * الدفع إلكتروني حصري للاستشارات؛ يجب أن يكون paymentStatus="confirmed"
- * (أو قيد التأكيد) قبل قبول الاستشارة من الطبيب الخارجي.
+ * قبل قبول الاستشارة من الطبيب الخارجي.
  */
 export async function acceptConsultationRequest(
   id: string,

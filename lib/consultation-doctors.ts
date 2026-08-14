@@ -87,6 +87,17 @@ export async function removeExternalDoctor(id: string): Promise<ExternalConsulta
   return writeExternalDoctors(doctors.filter((doctor) => doctor.id !== id));
 }
 
+/** تحديث بيانات طبيب خارجي (الاسم والدولة والتخصص والخبرة والسعر) */
+export async function updateExternalDoctor(
+  id: string,
+  input: Partial<Omit<ExternalConsultationDoctor, "id" | "createdAt">>,
+): Promise<ExternalConsultationDoctor[]> {
+  const doctors = await readExternalDoctors();
+  return writeExternalDoctors(
+    doctors.map((doctor) => (doctor.id === id ? ({ ...doctor, ...input } as ExternalConsultationDoctor) : doctor)),
+  );
+}
+
 export async function toggleExternalDoctor(
   id: string,
   enabled: boolean,
