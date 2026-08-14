@@ -346,3 +346,11 @@ GH_TOKEN (تكامل Manus-GitHub) يستطيع رؤية المستودعين (N
 - README عربي كُتب ودُفع: tabibi-mobile README (commit e3bb18f)، tabibi-partner README (commit 0e3a842). HEAD: المريض e3bb18f، الشريك 0e3a842.
 - مرحلة 3 (APK/Releases): لن نبني APK يدويًا (سياسة المنصة: APK عبر زر Publish في UI؛ البناء اليدوي في sandbox ممنوع/إرهاق موارد). الخطة: إنشاء GitHub Release مبدئي (v1.0.0) من كود HEAD في المستودعين (source code zip تلقائي) مع ملاحظة أن APK يُبنى عبر Publish — لا حاجة لتحميل ملفات APK يدويًا. إن أراد المستخدم APK لاحقًا: استخدام Publish من بطاقة المشروع ثم تنزيله.
 - بعد release: تحديث todo.md (كلا الشريك والمريض)، ثم checkpoint للمريض وتسليم نهائي مع روابط المستودعين + الـ releases + تعليمات صلاحية workflow.
+
+## حالة GitHub Actions (تكملة)
+- رُفع ci.yml بنجاح للمستودعين: tabibi-mobile@a58fc81، tabibi-partner@f5f2d94 (git push عبر remote github بـ GH_TOKEN من .user_env نجح بعد منح user الصلاحيات).
+- workflow CI يعمل الآن (state=active) لكن فشل في أول تشغيل بسبب تعارض إصدار pnpm: workflow كان يستخدم version: 9 بينما package.json packageManager = pnpm@9.12.0.
+- الحل: تغيير ci.yml إلى version: "9.12.0" ليطابق packageManager، ثم دفع commit جديد.
+- ملاحظة: gh run view --log-failed يتطلب GH_TOKEN صالح — يعمل.
+- الشريك remote اسمه github (نفس remote للمريض). الشريك لا يحوي .github في gitignore (كان محظور سابقًا عبر add -f).
+- بعد إصلاح CI: تنفيذ الاقتراحات المتبقية: release tags تلقائية + قسم دليل النشر في README.
