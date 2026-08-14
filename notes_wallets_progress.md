@@ -294,3 +294,26 @@ app/chat.tsx في المريض (سطور 55-83) يستدعي findRequestForThrea
 ### تحسين هيدر دردشة الشريك (00:24)
 اكتشفت أن الهيدر كان يعرض "محادثة" لأن isRequestForProvider ترفض أي طلب بلا addressLabel (string) — والطلب المزروع لم يكن يحويه. بعد إضافة addressLabel/Details أعيد التحميل ويجب أن يظهر اسم المريض في الهيدر. هذا سلوك تحقق صحيح (ليس خللًا). الهيدر نفسه يقرأ request?.patientName افتراضيًا (صحيح).
 المتبقي: التحقق البصري الأخير، تحديث todo.md بالمرحلة، pnpm test للمشروعين، checkpoints (مريض + شريك)، إعادة zip الشريك، التسليم.
+
+
+### رفع GitHub (01:48)
+- تطبيق المريض: مستودع خاص https://github.com/mohamedaljafari/tabibi-mobile (remote باسم github، الأصل origin=cloudflare artifacts)
+- تطبيق الشريك: مستودع خاص https://github.com/mohamedaljafari/tabibi-partner (git init محلي + رفع main)
+- حساب GitHub: mohamedaljafari (GH_TOKEN في البيئة)
+
+
+### حالة GitHub Actions + PAT (01:55)
+- أنشأت .github/workflows/ci.yml في كلا المشروعين (TypeScript + tests على push/PR إلى main)
+- token التكامل (GH_TOKEN) يرفض إنشاء ملفات workflow → طلبت GITHUB_PAT من المستخدم
+- GITHUB_PAT موجود في env (source /home/ubuntu/.user_env) وcurl /user يعيد 200، لكن push يعيد 403 "Write access to repository not granted"
+  → يعني PAT الذي قدّمه المستخدم Fine-grained token بدون صلاحية Content: Read and write للمستودعين tabibi-mobile/tabibi-partner
+  الحل: إخبار المستخدم بتعديل PAT (Content: read and write للمستودعين) ثم الدفع مرة أخرى
+- commit الـ ci موجود محليًا في المشروعين لكن لم يُدفع بعد
+- الـ remote في tabibi-mobile اسمه github (origin = cloudflare artifacts)
+
+
+### تشخيص رفض workflow (03:00)
+GH_TOKEN (تكامل Manus-GitHub) يستطيع رؤية المستودعين (Name already exists) لكنه GitHub App يرفض دفْع `.github/workflows/` بدون صلاحية workflows. الحل المعتمد:
+1. دفع كل الكود ما عدا .github/workflows عبر git (نجح سابقًا؟ لا — كل الرفع فشل سابقًا). الأفضل: دفع الكود بدون .github، ثم رفع workflow يدويًا عبر gh api أو إنشاء workflow عبر واجهة GitHub API التي قد تسمح بها GH_TOKEN (التكامل لديه workflows: read عادة).
+2. البديل الأسهل الموثوق: تفعيل Actions عبر gh workflow أو رفع الملف عبر gh api createOrUpdateFileContents (App قد يرفضها أيضًا — gh actions لا تُدار عادة عبر Apps بدون permission).
+الخطة: دفع الكود بدون workflow أولًا، ثم محاولة gh api لرفع workflow. إن رفض التكامل صراحة إنشاء workflow، ننبّه المستخدم إلى خطوة يدوية واحدة في إعدادات Actions (Allow GitHub Actions) أو نستخدم GITHUB_PAT بعد منحه Content R/W للمستودعين.
