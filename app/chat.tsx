@@ -32,7 +32,7 @@ import {
   AttachmentPreview,
   MessageAttachmentCard,
 } from "@/components/chat-attachment-bar";
-import { findThread, readMessages, sendAttachmentMessage, sendMessage, type ChatAttachment, type ChatMessage } from "@/lib/chat";
+import { findThread, isOtherTyping, markTyping, readMessageById, readMessages, sendAttachmentMessage, sendMessage, type ChatAttachment, type ChatMessage } from "@/lib/chat";
 import { readConsultationRequests, type ConsultationRequest } from "@/lib/consultation-requests";
 import { getPatientProfile } from "@/lib/patient-profile";
 import { readPatientRequests, type ServiceRequest } from "@/lib/service-requests";
@@ -64,6 +64,8 @@ export default function ChatScreen() {
   const [text, setText] = useState("");
   const [pendingAttachment, setPendingAttachment] = useState<ChatAttachment | null>(null);
   const [viewerUri, setViewerUri] = useState<string | null>(null);
+  const [otherTyping, setOtherTyping] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
 
   const listRef = useRef<FlatList<ChatMessage> | null>(null);
   const threadRef = useRef<string | null>(null);
@@ -129,6 +131,23 @@ export default function ChatScreen() {
     return () => clearInterval(interval);
   }, [refreshMessages]);
 
+  // مؤشر الكتابة: تحديث دوري لقراءة حالة الطرف الآخر، وكتابة لحظة آخر حرف عند التغيير
+  useEffect(() => {
+    const id = threadId;
+    if (!id) return;
+    const check = () => {
+      void isOtherTyping(id, "patient").then(setOtherTyping);
+    };
+    check();
+    const interval = setInterval(check, 2000);
+    return () => clearInterval(interval);
+  }, [threadId]);
+
+  useEffect(() => {
+    if (!text.trim() || !threadId) return;
+    void markTyping(threadId, "patient");
+  }, [text, threadId]);
+
   const scrollToBottom = useCallback((animated = true) => {
     try {
       listRef.current?.scrollToEnd({ animated });
@@ -160,21 +179,27 @@ export default function ChatScreen() {
         attachment: pendingAttachment ?? undefined,
         createdAt: Date.now(),
         deliveryStatus: "sending",
+        replyToId: replyingTo?.id,
         _optimistic: true,
       },
     ]);
     const attachmentToSend = pendingAttachment;
+    const replyTarget = replyingTo;
     setPendingAttachment(null);
+    setReplyingTo(null);
     setText("");
     scrollToBottom();
     if (Platform.OS !== "web") {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
     try {
+      const baseText = replyTarget
+        ? `ردًا على: ${replyTarget.text || (replyTarget.attachment ? "مرفق" : "")}\n\n${pendingText}`
+        : pendingText;
       if (attachmentToSend) {
-        await sendAttachmentMessage(id, "patient", attachmentToSend, pendingText);
+        await sendAttachmentMessage(id, "patient", attachmentToSend, baseText);
       } else {
-        await sendMessage(id, "patient", pendingText);
+        await sendMessage(id, "patient", baseText);
       }
       if (Platform.OS !== "web") {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -213,14 +238,26 @@ export default function ChatScreen() {
     const previous = index > 0 ? displayed[index - 1] : null;
     const isGrouped = previous !== null && previous.senderRole === item.senderRole;
     const optimisticTag = (item as OptimisticMessage)._optimistic;
+    const quoted = item.replyToId ? messages.find((message) => message.id === item.replyToId) : undefined;
     return (
-      <View
-        style={[
-          styles.bubbleRow,
-          isMine ? styles.myBubbleRow : styles.theirBubbleRow,
-          isGrouped ? styles.groupedRow : undefined,
-        ]}
-      >
+        <Pressable
+          onLongPress={() => {
+            if (isMine) return;
+            if (Platform.OS !== "web") {
+              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            }
+            setReplyingTo(item as ChatMessage);
+          }}
+          delayLongPress={450}
+          style={({ pressed }) => [pressed && { opacity: 0.7 }]}
+        >
+        <View
+          style={[
+            styles.bubbleRow,
+            isMine ? styles.myBubbleRow : styles.theirBubbleRow,
+            isGrouped ? styles.groupedRow : undefined,
+          ]}
+        >
         <View
           style={[
             styles.bubble,
@@ -232,6 +269,14 @@ export default function ChatScreen() {
               : undefined,
           ]}
         >
+          {quoted ? (
+            <View style={styles.quoteCard}>
+              <View style={styles.quoteBar} />
+              <Text style={styles.quoteText} numberOfLines={2}>
+                {quoted.text || (quoted.attachment ? `مرفق: ${quoted.attachment.fileName}` : "")}
+              </Text>
+            </View>
+          ) : null}
           {item.attachment ? (
             <Pressable
               onPress={item.attachment.kind === "image" ? () => setViewerUri(item.attachment!.uri) : undefined}
@@ -260,8 +305,9 @@ export default function ChatScreen() {
             </Text>
           </View>
         </View>
-      </View>
-    );
+        </View>
+        </Pressable>
+      );
   };
 
   const renderEmpty = () => (
@@ -373,6 +419,37 @@ export default function ChatScreen() {
 
         {pendingAttachment ? (
           <AttachmentPreview attachment={pendingAttachment} onRemove={() => setPendingAttachment(null)} />
+        ) : null}
+
+        {replyingTo ? (
+          <View style={styles.replyPreview}>
+            <View style={styles.replyPreviewBar} />
+            <View style={styles.replyPreviewCopy}>
+              <Text style={styles.replyPreviewLabel}>
+                ردًا على {replyingTo.senderRole === "patient" ? "رسالتك" : displayName}
+              </Text>
+              <Text style={styles.replyPreviewText} numberOfLines={2}>
+                {replyingTo.text || (replyingTo.attachment ? `مرفق: ${replyingTo.attachment.fileName}` : "")}
+              </Text>
+            </View>
+            <Pressable
+              style={({ pressed }) => [styles.replyCancel, pressed && { opacity: 0.6 }]}
+              onPress={() => setReplyingTo(null)}
+            >
+              <MaterialIcons name="close" size={16} color="#8A8173" />
+            </Pressable>
+          </View>
+        ) : null}
+
+        {otherTyping ? (
+          <View style={styles.typingBar}>
+            <View style={styles.typingDots}>
+              <View style={styles.typingDot} />
+              <View style={[styles.typingDot, styles.typingDotMid]} />
+              <View style={styles.typingDot} />
+            </View>
+            <Text style={styles.typingText}>{displayName} يكتب الآن...</Text>
+          </View>
         ) : null}
 
         <View style={styles.inputBar}>
@@ -577,4 +654,72 @@ const styles = StyleSheet.create({
     height: 520,
     width: 330,
   },
+  typingBar: {
+    alignItems: "center",
+    backgroundColor: "#F8F5ED",
+    borderBottomColor: "#E8E0D1",
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: "row-reverse",
+    gap: 8,
+    paddingBottom: 6,
+    paddingHorizontal: 16,
+    paddingTop: 6,
+  },
+  typingDots: {
+    alignItems: "center",
+    flexDirection: "row-reverse",
+    gap: 4,
+    justifyContent: "center",
+  },
+  typingDot: {
+    backgroundColor: "#9A907E",
+    borderRadius: 3,
+    height: 6,
+    width: 6,
+  },
+  typingDotMid: { opacity: 0.6 },
+  typingText: { color: "#8A8173", fontSize: 11 },
+  quoteCard: {
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.12)",
+    borderRadius: 10,
+    flexDirection: "row-reverse",
+    gap: 8,
+    marginBottom: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  quoteBar: {
+    backgroundColor: "rgba(255,253,248,0.6)",
+    borderRadius: 2,
+    height: 26,
+    width: 3,
+  },
+  quoteText: {
+    color: "rgba(255,253,248,0.85)",
+    flex: 1,
+    fontSize: 11,
+    lineHeight: 15,
+    textAlign: "right",
+  },
+  replyPreview: {
+    alignItems: "center",
+    backgroundColor: "#F0EBDD",
+    borderTopColor: "#E8E0D1",
+    borderTopWidth: StyleSheet.hairlineWidth,
+    flexDirection: "row-reverse",
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  replyPreviewBar: {
+    backgroundColor: "#6B7B3F",
+    borderRadius: 2,
+    height: 34,
+    width: 3,
+  },
+  replyPreviewCopy: { flex: 1 },
+  replyPreviewLabel: { color: "#6B7B3F", fontSize: 10, fontWeight: "800", textAlign: "right" },
+  replyPreviewText: { color: "#786F61", fontSize: 11, lineHeight: 15, textAlign: "right" },
+  replyCancel: { padding: 4 },
 });

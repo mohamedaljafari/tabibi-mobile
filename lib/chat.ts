@@ -32,6 +32,8 @@ export type ChatMessage = {
   createdAt: number;
   /** حالة الإرسال للرسائل الخارجة عن الجهاز: "sending" ثم "sent" */
   deliveryStatus?: "sending" | "sent";
+  /** معرّف الرسالة المردود عليها (اقتباس) إن وجد */
+  replyToId?: string;
 };
 
 export type ChatThread = {
@@ -176,6 +178,56 @@ export async function sendAttachmentMessage(
   const messages = await readJson<ChatMessage[]>(CHAT_MESSAGES_KEY, true);
   await writeJson(CHAT_MESSAGES_KEY, [...messages, message]);
   return message;
+}
+
+/** مؤشر الكتابة المؤقت — يخزن من الطرف المكتِب ويُقرأ من الطرف الآخر */
+export type ChatTyping = {
+  /** مفتاح المحادثة */
+  threadId: string;
+  /** "patient" أو "provider" */
+  senderRole: "patient" | "provider";
+  /** لحظة آخر حرف كُتب — تُعتبر منتهية بعد 5 ثوانٍ */
+  lastTypedAt: number;
+};
+
+export const CHAT_TYPING_KEY = "provider_chat_typing_v1";
+
+export const TYPING_WINDOW_MS = 5000;
+
+/** تحديث مؤشر الكتابة للطرف الحالي في محادثة */
+export async function markTyping(
+  threadId: string,
+  senderRole: "patient" | "provider",
+): Promise<void> {
+  const typing: ChatTyping = {
+    threadId,
+    senderRole,
+    lastTypedAt: Date.now(),
+  };
+  const current = await readJson<ChatTyping[]>(CHAT_TYPING_KEY, true);
+  const others = current.filter((item) => item.threadId !== threadId);
+  await writeJson(CHAT_TYPING_KEY, [...others, typing]);
+}
+
+/** قراءة مؤشر الكتابة الحالي: هل الطرف الآخر يكتب الآن في محادثة معينة؟ */
+export async function isOtherTyping(
+  threadId: string,
+  myRole: "patient" | "provider",
+): Promise<boolean> {
+  const current = await readJson<ChatTyping[]>(CHAT_TYPING_KEY, true);
+  const entry = current.find((item) => item.threadId === threadId);
+  if (!entry) return false;
+  if (entry.senderRole === myRole) return false;
+  return Date.now() - entry.lastTypedAt < TYPING_WINDOW_MS;
+}
+
+/** إيجاد رسالة معينة داخل محادثة (للاقتباس عند الرد) */
+export async function readMessageById(
+  threadId: string,
+  messageId: string,
+): Promise<ChatMessage | null> {
+  const messages = await readMessages(threadId);
+  return messages.find((message) => message.id === messageId) ?? null;
 }
 
 /** عدد الرسائل غير المقروءة لمستخدم معين عبر محادثاته (بآخر قراءة) */
