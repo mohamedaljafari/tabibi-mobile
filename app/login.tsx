@@ -15,20 +15,21 @@ import * as Haptics from "expo-haptics";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { TabibiBrand } from "@/components/tabibi-logo";
-import { getPatientProfile,
-  updatePatientPassword, verifyPassword, updatePatientPasswordStrong } from "@/lib/patient-profile";
+import { signInWithPhone } from "@/lib/auth-supabase";
+import { readPatientSetup } from "@/lib/records-supabase";
+import { normalizePhone } from "@/lib/patient-profile";
 
 export default function LoginScreen() {
-  const [fullName, setFullName] = useState("");
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const handleSignIn = async () => {
     if (busy) return;
-    const trimmedName = fullName.trim();
-    if (trimmedName.length < 3) {
-      Alert.alert("بيانات غير مكتملة", "أدخل الاسم الكامل كما سُجل به الحساب.");
+    const normalizedPhone = normalizePhone(phone.trim());
+    if (normalizedPhone.length < 9) {
+      Alert.alert("بيانات غير مكتملة", "أدخل رقم الهاتف كما سُجل به الحساب.");
       return;
     }
     if (password.length < 8) {
@@ -37,52 +38,26 @@ export default function LoginScreen() {
     }
     setBusy(true);
     try {
-      const profile = await getPatientProfile();
-      if (!profile) {
-        Alert.alert("الحساب غير موجود", "لم نعثر على حساب مسجل، جرّب إنشاء حساب جديد من الأسفل.");
+      const result = await signInWithPhone(normalizedPhone, password);
+      if ("error" in result) {
+        Alert.alert("تعذر تسجيل الدخول", result.error);
         if (Platform.OS !== "web") {
           void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         }
-        setBusy(false);
         return;
-      }
-      const normalizedInput = trimmedName.toLocaleLowerCase("ar");
-      const normalizedSaved = profile.fullName.toLocaleLowerCase("ar");
-      const nameMatches = normalizedInput === normalizedSaved;
-      const passwordMatches = profile.passwordHash !== undefined && await verifyPassword(profile.passwordHash, password);
-
-      // الحسابات القديمة التي لم تُحفظ فيها كلمة المرور تقبل بكلمة المرور المدخلة أول مرة.
-      if (nameMatches && (passwordMatches || profile.passwordHash === undefined)) {
-        // حساب قديم لم تُحفظ فيه كلمة المرور: نحفظ تجزئة كلمة المرور المدخلة.
-        if (profile.passwordHash === undefined) {
-          try {
-            await updatePatientPasswordStrong(password);
-          } catch {
-            // المتابعة دون حفظ الهاش لا تمنع الدخول.
-          }
-        }
-        // ترقية التجزئة الضعيفة القديمة (djb2) إلى SHA-256 مع salt عند الدخول الناجح.
-        if (profile.passwordHash !== undefined && typeof profile.passwordHash !== "string") {
-          try {
-            await updatePatientPasswordStrong(password);
-          } catch {
-            // المتابعة دون ترقية لا تمنع الدخول.
-          }
-        }
-        if (Platform.OS !== "web") {
-          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        }
-        router.replace(profile.isSetupComplete ? ("/home" as never) : ("/profile" as never));
-        return;
-      }
-      if (!nameMatches) {
-        Alert.alert("بيانات غير صحيحة", "الاسم لا يطابق الحساب المسجل في هذا التطبيق.");
-      } else {
-        Alert.alert("كلمة المرور غير صحيحة", "تحقق من كلمة المرور وحاول مرة أخرى.");
       }
       if (Platform.OS !== "web") {
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
+      // حالة إكمال إعداد الحساب محفوظة في Supabase وتُقرأ هنا لتحديد الوجهة.
+      let isSetupComplete = false;
+      try {
+        const setup = await readPatientSetup(result.user);
+        isSetupComplete = Boolean(setup.isSetupComplete);
+      } catch {
+        // لا نمنع الدخول عند تعذر قراءة الإعداد.
+      }
+      router.replace(isSetupComplete ? ("/home" as never) : ("/profile" as never));
     } finally {
       setBusy(false);
     }
@@ -106,13 +81,15 @@ export default function LoginScreen() {
 
             <View className="gap-4">
               <View className="gap-2">
-                <Text className="text-sm font-bold text-foreground">الاسم الكامل</Text>
+                <Text className="text-sm font-bold text-foreground">رقم الهاتف</Text>
                 <TextInput
-                  value={fullName}
-                  onChangeText={setFullName}
-                  placeholder="اكتب اسمك كما سُجل به الحساب"
+                  value={phone}
+                  onChangeText={setPhone}
+                  placeholder="مثال: 09XXXXXXXX أو +2189XXXXXXXX"
+                  keyboardType="phone-pad"
                   placeholderTextColor="#8A8173"
                   autoCapitalize="none"
+                  autoComplete="tel"
                   returnKeyType="done"
                   onSubmitEditing={handleSignIn}
                   className="rounded-2xl border border-border bg-surface px-4 py-4 text-foreground"

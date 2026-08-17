@@ -6,19 +6,49 @@ import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { FormField } from "@/components/form-field";
 import { ScreenContainer } from "@/components/screen-container";
 import { createFamilyMemberDraft, removeFamilyMemberDraft, type FamilyMemberDraft } from "@/lib/account-setup";
-import { completeAccountSetup, getPatientProfile, type PatientProfile } from "@/lib/patient-profile";
+import { getAuthState } from "@/lib/auth-supabase";
 import { getLibyaCities } from "@/lib/libya-cities";
+import {
+  addPatientAddress,
+  createMedicalRecords,
+  readPatientAddresses,
+  readPatientMedicalRecords,
+  readPatientSetup,
+  savePatientSetup,
+  type AddressPayload,
+  type MedicalRecordPayload,
+  type SetupPayload,
+} from "@/lib/records-supabase";
+import type { TabibiUser } from "@/lib/supabase";
 
 export default function ProfileScreen() {
-  const [profile, setProfile] = useState<PatientProfile | null>(null);
+  const [user, setUser] = useState<TabibiUser | null>(null);
+  const [addresses, setAddresses] = useState<AddressPayload[]>([]);
+  const [medicalRecords, setMedicalRecords] = useState<MedicalRecordPayload[]>([]);
+  const [setup, setSetup] = useState<SetupPayload>({ isSetupComplete: false, familyMemberNames: [] });
   const [cityNames, setCityNames] = useState<Record<string, string>>({});
   const [familyName, setFamilyName] = useState("");
   const [familyMembers, setFamilyMembers] = useState<FamilyMemberDraft[]>([]);
   const [isCompleting, setIsCompleting] = useState(false);
+  const [isAddingAddress, setIsAddingAddress] = useState(false);
 
   const loadProfile = useCallback(async () => {
-    setProfile(await getPatientProfile());
-    const cities = await getLibyaCities();
+    const auth = await getAuthState();
+    if (!auth) {
+      router.replace("/login");
+      return;
+    }
+    setUser(auth.user);
+    const [setupRecord, addressRecords, recordData, cities] = await Promise.all([
+      readPatientSetup(auth.user),
+      readPatientAddresses(auth.user),
+      readPatientMedicalRecords(auth.user),
+      getLibyaCities(),
+    ]);
+    setSetup(setupRecord);
+    setAddresses(addressRecords);
+    setMedicalRecords(recordData);
+    setFamilyMembers(setupRecord.familyMemberNames.map((fullName) => createFamilyMemberDraft(fullName)).filter(Boolean as unknown as (m: FamilyMemberDraft | null) => m is FamilyMemberDraft));
     setCityNames(Object.fromEntries(cities.map((city) => [city.id, city.name])));
   }, []);
   useFocusEffect(useCallback(() => { loadProfile(); }, [loadProfile]));
@@ -38,26 +68,54 @@ export default function ProfileScreen() {
   };
 
   const completeSetup = async () => {
-    if (!profile) return;
-    if (profile.addresses.length === 0) {
-      Alert.alert("أضف عنوانًا", "أضف عنوانًا واحدًا على الأقل قبل إنشاء الملف الطبي.");
+    if (!user) return;
+    if (addresses.length === 0) {
+      Alert.alert("أضف عنوانًا", "أضف عنوانًا واحدًا على الأقل قبل إنشاء الملفات الطبية.");
       return;
     }
     setIsCompleting(true);
     try {
-      await completeAccountSetup(familyMembers.map((member) => member.fullName));
+      await Promise.all([
+        savePatientSetup(user, {
+          isSetupComplete: true,
+          familyMemberNames: familyMembers.map((member) => member.fullName),
+        }),
+        createMedicalRecords(
+          user,
+          [
+            { ownerName: user.display_name ?? "المريض", ownerType: "patient" },
+            ...familyMembers.map((member) => ({ ownerName: member.fullName, ownerType: "family" as const })),
+          ],
+        ),
+      ]);
       router.replace("/home");
     } finally {
       setIsCompleting(false);
     }
   };
 
-  if (!profile) {
+  const addAddress = async () => {
+    if (!user || isAddingAddress) return;
+    setIsAddingAddress(true);
+    try {
+      const next = await addPatientAddress(user, {
+        label: `عنوان ${addresses.length + 1}`,
+        addressLabel: "الموقع المحفوظ من الخريطة",
+        latitude: 32.8997,
+        longitude: 13.1755,
+        source: "map",
+      });
+      setAddresses(next);
+    } finally {
+      setIsAddingAddress(false);
+    }
+  };
+
+  if (!user) {
     return <ScreenContainer edges={["top", "bottom", "left", "right"]}><View style={styles.loading}><ActivityIndicator color="#6B7B3F" size="large" /></View></ScreenContainer>;
   }
 
-  const setupComplete = profile.isSetupComplete;
-  const nextAddressLabel = profile.addresses.length === 0 ? "العنوان الرئيسي" : `عنوان ${profile.addresses.length + 1}`;
+  const setupComplete = setup.isSetupComplete;
 
   return (
     <ScreenContainer edges={["top", "bottom", "left", "right"]}>
@@ -67,23 +125,22 @@ export default function ProfileScreen() {
 
         <View style={styles.identityCard}>
           <View style={styles.avatar}><MaterialIcons name="person" size={32} color="#6B7B3F" /></View>
-          <View style={styles.identityText}><Text style={styles.fullName}>{profile.fullName}</Text><Text style={styles.phone}>{profile.phone}</Text></View>
+          <View style={styles.identityText}><Text style={styles.fullName}>{user.display_name}</Text><Text style={styles.phone}>{user.phone}</Text></View>
         </View>
 
         <View style={styles.sectionHeader}><Text style={styles.sectionTitle}>العناوين</Text><Text style={styles.sectionHint}>حدّدها من الخريطة أو موقعك الحالي</Text></View>
-        {profile.addresses.length > 0 ? profile.addresses.map((address) => (
+        {addresses.length > 0 ? addresses.map((address) => (
           <View key={address.id} style={styles.addressCard}>
             <View style={styles.addressIcon}><MaterialIcons name="location-on" size={21} color="#C9A961" /></View>
-            <View style={styles.addressText}><Text style={styles.addressLabel}>{address.label}{address.cityId && cityNames[address.cityId] ? ` — ${cityNames[address.cityId]}` : ""}</Text><Text style={styles.addressValue}>{address.addressLabel}{address.areaNames && address.areaNames.length > 0 ? ` — ${address.areaNames.join("، ")}` : ""}</Text></View>
+            <View style={styles.addressText}><Text style={styles.addressLabel}>{address.label}</Text><Text style={styles.addressValue}>{address.addressLabel}</Text></View>
           </View>
         )) : <View style={styles.emptyCard}><MaterialIcons name="location-off" size={22} color="#8A8173" /><Text style={styles.emptyText}>لم تتم إضافة أي عناوين بعد.</Text></View>}
-        <Pressable accessibilityRole="button" onPress={() => router.push({ pathname: "/address-picker" as never, params: { label: nextAddressLabel } } as never)} style={({ pressed }) => [styles.addAddress, pressed && styles.pressed]}><MaterialIcons name="add" size={22} color="#6B7B3F" /><Text style={styles.addAddressText}>{profile.addresses.length === 0 ? "إضافة عنوان" : "إضافة عنوان آخر"}</Text></Pressable>
-        <Pressable accessibilityRole="button" onPress={() => router.push("/suggest-city" as never)} style={({ pressed }) => [styles.suggestCityRow, pressed && styles.pressed]}><MaterialIcons name="add-location-alt" size={20} color="#C9A961" /><Text style={styles.suggestCityText}>اقتراح مدينة جديدة غير موجودة بالقائمة</Text><MaterialIcons name="chevron-left" size={18} color="#C9A961" /></Pressable>
+        <Pressable accessibilityRole="button" onPress={addAddress} style={({ pressed }) => [styles.addAddress, pressed && styles.pressed]}><MaterialIcons name="add" size={22} color="#6B7B3F" /><Text style={styles.addAddressText}>{isAddingAddress ? "جارٍ الإضافة..." : addresses.length === 0 ? "إضافة عنوان" : "إضافة عنوان آخر"}</Text></Pressable>
 
         {setupComplete ? (
           <View style={styles.recordsSection}>
             <Text style={styles.sectionTitle}>الملفات الطبية</Text>
-            {profile.medicalRecords.map((record) => <Pressable key={record.id} accessibilityRole="button" accessibilityLabel={`فتح الملف الطبي لـ ${record.ownerName}`} onPress={() => router.push("/medical-record")} style={({ pressed }) => [styles.recordCard, pressed && styles.pressed]}><MaterialIcons name="folder-shared" size={23} color="#6B7B3F" /><View style={styles.addressText}><Text style={styles.addressLabel}>{record.ownerName}</Text><Text style={styles.addressValue}>{record.ownerType === "patient" ? "ملفك الطبي" : "ملف طبي لعائلة المريض"}</Text></View><MaterialIcons name="chevron-left" size={18} color="#C9A961" /></Pressable>)}
+            {medicalRecords.map((record) => <Pressable key={record.id} accessibilityRole="button" accessibilityLabel={`فتح الملف الطبي لـ ${record.ownerName}`} onPress={() => router.push("/medical-record")} style={({ pressed }) => [styles.recordCard, pressed && styles.pressed]}><MaterialIcons name="folder-shared" size={23} color="#6B7B3F" /><View style={styles.addressText}><Text style={styles.addressLabel}>{record.ownerName}</Text><Text style={styles.addressValue}>{record.ownerType === "patient" ? "ملفك الطبي" : "ملف طبي لعائلة المريض"}</Text></View><MaterialIcons name="chevron-left" size={18} color="#C9A961" /></Pressable>)}
           </View>
         ) : (
           <View style={styles.familySection}>
@@ -106,7 +163,6 @@ const styles = StyleSheet.create({
   header: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
   back: { alignItems: "center", backgroundColor: "#F0EBDD", borderRadius: 18, height: 42, justifyContent: "center", width: 42 },
   title: { color: "#465132", flex: 1, fontSize: 22, fontWeight: "800", textAlign: "center" },
-  adminShield: { alignItems: "center", backgroundColor: "#F0EBDD", borderRadius: 18, height: 42, justifyContent: "center", width: 42 },
   helper: { color: "#8A8173", fontSize: 12, lineHeight: 18, marginHorizontal: 12, marginTop: 6, textAlign: "center" },
   identityCard: { alignItems: "center", backgroundColor: "#FFFDF8", borderColor: "#E4DCCB", borderRadius: 18, borderWidth: 1, flexDirection: "row-reverse", gap: 10, marginTop: 10, padding: 10 },
   avatar: { alignItems: "center", backgroundColor: "#F0EBDD", borderRadius: 21, height: 42, justifyContent: "center", width: 42 },
@@ -125,8 +181,6 @@ const styles = StyleSheet.create({
   emptyText: { color: "#8A8173", fontSize: 13 },
   addAddress: { alignItems: "center", backgroundColor: "#F0EBDD", borderColor: "#D9D1C0", borderRadius: 14, borderStyle: "dashed", borderWidth: 1, flexDirection: "row-reverse", gap: 7, justifyContent: "center", marginTop: 7, minHeight: 42 },
   addAddressText: { color: "#465132", fontSize: 14, fontWeight: "800" },
-  suggestCityRow: { alignItems: "center", backgroundColor: "#F6F2E8", borderRadius: 12, borderWidth: 1, borderColor: "#E4DCCB", flexDirection: "row", gap: 8, justifyContent: "space-between", marginTop: 12, paddingHorizontal: 14, paddingVertical: 13 },
-  suggestCityText: { color: "#6A6256", flex: 1, fontSize: 13, fontWeight: "700", textAlign: "right" },
   familySection: { backgroundColor: "#FFFDF8", borderColor: "#E4DCCB", borderRadius: 18, borderWidth: 1, marginTop: 12, padding: 11 },
   familyCopy: { color: "#8A8173", fontSize: 13, lineHeight: 20, marginTop: 6, textAlign: "right" },
   familyInputRow: { alignItems: "flex-end", flexDirection: "row-reverse", gap: 8, marginTop: 7 },
