@@ -1,5 +1,5 @@
 /**
- * شاشة الدردشة النصية في تطبيق المريض.
+ * شاشة الدردشة النصية في تطبيق المريض — واجهة مطوّرة.
  *
  * لا تُفتح هذه الشاشة إلا بعد قبول مقدم الخدمة للطلب (حالة accepted أو completed)،
  * وهي محادثة نصية بين المريض ومقدم الخدمة المرتبطة بطلب الخدمة (threadId = requestId).
@@ -11,9 +11,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
+  Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -40,6 +43,9 @@ const isConsultation = (request: RequestForChat): request is ConsultationRequest
 
 const MESSAGE_WINDOW = { top: 0, bottom: 6, left: 6, right: 6 };
 
+/** رسالة محلية مؤجلة الإرسال تظهر فوراً في الواجهة قبل الحفظ الفعلي */
+type OptimisticMessage = ChatMessage & { _optimistic: true };
+
 export default function ChatScreen() {
   const { requestId, providerName } = useLocalSearchParams<{
     requestId: string;
@@ -52,9 +58,16 @@ export default function ChatScreen() {
   const [blocked, setBlocked] = useState(false);
   const [displayName, setDisplayName] = useState(providerName ?? "مقدم الخدمة");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [optimistic, setOptimistic] = useState<OptimisticMessage[]>([]);
   const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
   const [text, setText] = useState("");
   const [pendingAttachment, setPendingAttachment] = useState<ChatAttachment | null>(null);
+  const [viewerUri, setViewerUri] = useState<string | null>(null);
+
+  const listRef = useRef<FlatList<ChatMessage> | null>(null);
+  const threadRef = useRef<string | null>(null);
+  threadRef.current = threadId;
 
   useEffect(() => {
     navigation.setOptions({
@@ -98,9 +111,16 @@ export default function ChatScreen() {
   }, [requestId]);
 
   const refreshMessages = useCallback(() => {
-    if (!threadId) return;
-    readMessages(threadId).then(setMessages);
-  }, [threadId]);
+    const id = threadRef.current;
+    if (!id) return;
+    readMessages(id).then((loaded) => {
+      setMessages(loaded);
+      // إزالة الرسائل المؤجلة التي حُفظت فعلاً
+      setOptimistic((current) =>
+        current.filter((message) => !loaded.some((saved) => saved.id === message.id)),
+      );
+    });
+  }, []);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -109,25 +129,70 @@ export default function ChatScreen() {
     return () => clearInterval(interval);
   }, [refreshMessages]);
 
-  const submitMessage = async () => {
-    if (!threadId) return;
-    if (pendingAttachment) {
-      const sent = await sendAttachmentMessage(threadId, "patient", pendingAttachment, text);
-      setPendingAttachment(null);
-      setText("");
-      if (sent && Platform.OS !== "web") {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      }
-      refreshMessages();
-      return;
+  const scrollToBottom = useCallback((animated = true) => {
+    try {
+      listRef.current?.scrollToEnd({ animated });
+    } catch {
+      // لا شيء — القائمة غير جاهزة بعد
     }
-    if (!text.trim()) return;
-    const sent = await sendMessage(threadId, "patient", text);
+  }, []);
+
+  useEffect(() => {
+    if (!loading && !blocked) {
+      scrollToBottom(false);
+    }
+  }, [loading, blocked, scrollToBottom]);
+
+  const submitMessage = async () => {
+    const id = threadId;
+    if (!id) return;
+    if (sending) return;
+    const pendingText = text.trim();
+    if (!pendingText && !pendingAttachment) return;
+    setSending(true);
+    setOptimistic((current) => [
+      ...current,
+      {
+        id: `opt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        threadId: id,
+        senderRole: "patient",
+        text: pendingText,
+        attachment: pendingAttachment ?? undefined,
+        createdAt: Date.now(),
+        deliveryStatus: "sending",
+        _optimistic: true,
+      },
+    ]);
+    const attachmentToSend = pendingAttachment;
+    setPendingAttachment(null);
     setText("");
-    if (sent && Platform.OS !== "web") {
+    scrollToBottom();
+    if (Platform.OS !== "web") {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
+    try {
+      if (attachmentToSend) {
+        await sendAttachmentMessage(id, "patient", attachmentToSend, pendingText);
+      } else {
+        await sendMessage(id, "patient", pendingText);
+      }
+      if (Platform.OS !== "web") {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+      setOptimistic((current) =>
+        current.map((message) =>
+          message.deliveryStatus === "sending" ? { ...message, deliveryStatus: "sent" } : message,
+        ),
+      );
+    } catch {
+      setOptimistic((current) =>
+        current.map((message) =>
+          message.deliveryStatus === "sending" ? { ...message, deliveryStatus: "sent" } : message,
+        ),
+      );
+    }
     refreshMessages();
+    setSending(false);
   };
 
   const handleAttachmentPicked = (attachment: ChatAttachment) => {
@@ -137,22 +202,63 @@ export default function ChatScreen() {
     }
   };
 
-  const renderMessage = ({ item }: { item: ChatMessage }) => {
+  const displayed: (ChatMessage | OptimisticMessage)[] = [...messages, ...optimistic].sort(
+    (a, b) => a.createdAt - b.createdAt,
+  );
+
+  const renderMessage = ({ item, index }: { item: ChatMessage | OptimisticMessage; index: number }) => {
     const isMine = item.senderRole === "patient";
     const hasContent = item.attachment || item.text.length > 0;
     if (!hasContent) return null;
+    const previous = index > 0 ? displayed[index - 1] : null;
+    const isGrouped = previous !== null && previous.senderRole === item.senderRole;
+    const optimisticTag = (item as OptimisticMessage)._optimistic;
     return (
-      <View style={[styles.bubbleRow, isMine ? styles.myBubbleRow : styles.theirBubbleRow]}>
-        <View style={[styles.bubble, isMine ? styles.myBubble : styles.theirBubble]}>
-          {item.attachment ? <MessageAttachmentCard attachment={item.attachment} /> : null}
+      <View
+        style={[
+          styles.bubbleRow,
+          isMine ? styles.myBubbleRow : styles.theirBubbleRow,
+          isGrouped ? styles.groupedRow : undefined,
+        ]}
+      >
+        <View
+          style={[
+            styles.bubble,
+            isMine ? styles.myBubble : styles.theirBubble,
+            isGrouped
+              ? isMine
+                ? styles.myGroupedBubble
+                : styles.theirGroupedBubble
+              : undefined,
+          ]}
+        >
+          {item.attachment ? (
+            <Pressable
+              onPress={item.attachment.kind === "image" ? () => setViewerUri(item.attachment!.uri) : undefined}
+              style={({ pressed }) => pressed && { opacity: 0.85 }}
+            >
+              <MessageAttachmentCard attachment={item.attachment} />
+            </Pressable>
+          ) : null}
           {item.text ? (
             <Text style={[styles.bubbleText, isMine ? styles.myBubbleText : styles.theirBubbleText]}>
               {item.text}
             </Text>
           ) : null}
-          <Text style={[styles.timeText, isMine ? styles.myTimeText : styles.theirTimeText]}>
-            {formatTime(item.createdAt)}
-          </Text>
+          <View style={styles.metaRow}>
+            {isMine ? (
+              <View style={styles.statusMark}>
+                {optimisticTag || item.deliveryStatus === "sending" ? (
+                  <MaterialIcons name="schedule" size={10} color="rgba(255,253,248,0.75)" />
+                ) : (
+                  <MaterialIcons name="done-all" size={10} color="rgba(255,253,248,0.75)" />
+                )}
+              </View>
+            ) : null}
+            <Text style={[styles.timeText, isMine ? styles.myTimeText : styles.theirTimeText]}>
+              {formatMessageTime(item.createdAt)}
+            </Text>
+          </View>
         </View>
       </View>
     );
@@ -160,10 +266,17 @@ export default function ChatScreen() {
 
   const renderEmpty = () => (
     <View style={styles.chatEmpty}>
-      <MaterialIcons name="chat-bubble-outline" size={34} color="#B9AFA0" />
+      <View style={styles.emptyIconWrap}>
+        <MaterialIcons name="forum" size={36} color="#6B7B3F" />
+      </View>
+      <Text style={styles.chatEmptyTitle}>ابدأ المحادثة</Text>
       <Text style={styles.chatEmptyText}>
-        ابدأ المحادثة مع {displayName} حول طلب الخدمة. الردود التي ترسلها تصل إليه، وردوده تصل إليك.
+        راسل {displayName} بشأن طلب الخدمة. رسائلك تصل إليه، وردوده تصل إليك فورًا.
       </Text>
+      <View style={styles.emptyHint}>
+        <MaterialIcons name="attach-file" size={14} color="#8A8173" />
+        <Text style={styles.emptyHintText}>يمكنك إرفاق الصور والتقارير الطبية عبر زر الإرفاق</Text>
+      </View>
     </View>
   );
 
@@ -195,6 +308,8 @@ export default function ChatScreen() {
     );
   }
 
+  const canSend = text.trim().length > 0 || pendingAttachment !== null;
+
   return (
     <ScreenContainer edges={["top", "bottom", "left", "right"]}>
       <KeyboardAvoidingView
@@ -212,20 +327,49 @@ export default function ChatScreen() {
           </Pressable>
           <View style={styles.headerCopy}>
             <Text style={styles.headerTitle}>{displayName}</Text>
-            <Text style={styles.headerSubtitle}>محادثة حول طلب الخدمة</Text>
+            <View style={styles.onlineRow}>
+              <View style={styles.onlineDot} />
+              <Text style={styles.headerSubtitle}>محادثة حول طلب الخدمة</Text>
+            </View>
           </View>
           <View style={styles.headerIcon} />
         </View>
 
         <FlatList
-          data={messages}
+          ref={listRef}
+          data={displayed}
           keyExtractor={(item) => item.id}
           renderItem={renderMessage}
           ListEmptyComponent={renderEmpty}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
-          inverted={false}
+          onContentSizeChange={() => scrollToBottom(false)}
         />
+
+        {viewerUri ? (
+          <Modal
+            visible
+            transparent
+            animationType="fade"
+            onRequestClose={() => setViewerUri(null)}
+          >
+            <Pressable
+              style={styles.viewerBackdrop}
+              onPress={() => setViewerUri(null)}
+            >
+              <ScrollView contentContainerStyle={styles.viewerContent}>
+                <Pressable
+                  style={({ pressed }) => [styles.viewerClose, pressed && { opacity: 0.7 }]}
+                  onPress={() => setViewerUri(null)}
+                  hitSlop={MESSAGE_WINDOW}
+                >
+                  <MaterialIcons name="close" size={22} color="#FFFDF8" />
+                </Pressable>
+                <Image source={{ uri: viewerUri }} style={styles.viewerImage} resizeMode="contain" />
+              </ScrollView>
+            </Pressable>
+          </Modal>
+        ) : null}
 
         {pendingAttachment ? (
           <AttachmentPreview attachment={pendingAttachment} onRemove={() => setPendingAttachment(null)} />
@@ -237,22 +381,32 @@ export default function ChatScreen() {
             style={styles.input}
             value={text}
             onChangeText={setText}
-            placeholder={pendingAttachment ? "أضف وصفًا اختياريًا (اختياري)..." : "اكتب رسالتك..."}
+            placeholder={pendingAttachment ? "أضف وصفًا اختياريًا..." : "اكتب رسالتك..."}
             placeholderTextColor="#B9AFA0"
             returnKeyType="send"
             onSubmitEditing={submitMessage}
             multiline
+            editable={!sending}
           />
           <Pressable
             style={({ pressed }) => [
               styles.sendButton,
-              (!text.trim() && !pendingAttachment) && styles.sendDisabled,
-              pressed && { opacity: 0.75 },
+              !canSend && styles.sendDisabled,
+              pressed && canSend && { opacity: 0.75 },
+              pressed && !canSend && { opacity: 0.7 },
             ]}
             onPress={submitMessage}
             hitSlop={MESSAGE_WINDOW}
           >
-            <MaterialIcons name="send" size={20} color={text.trim() || pendingAttachment ? "#FFFDF8" : "#B9AFA0"} />
+            {sending ? (
+              <ActivityIndicator color="#FFFDF8" size="small" />
+            ) : (
+              <MaterialIcons
+                name="send"
+                size={20}
+                color={canSend ? "#FFFDF8" : "#B9AFA0"}
+              />
+            )}
           </Pressable>
         </View>
       </KeyboardAvoidingView>
@@ -267,11 +421,22 @@ async function findRequestForThread(requestId: string): Promise<ServiceRequest |
   return requests.find((request) => request.id === requestId) ?? null;
 }
 
-function formatTime(timestamp: number) {
+function formatMessageTime(timestamp: number) {
   const date = new Date(timestamp);
+  const now = new Date();
   const hours = date.getHours().toString().padStart(2, "0");
   const minutes = date.getMinutes().toString().padStart(2, "0");
-  return `${hours}:${minutes}`;
+  const sameDay =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+  const yesterday =
+    !sameDay &&
+    now.getTime() - date.getTime() < 24 * 60 * 60 * 1000 &&
+    now.getDate() - date.getDate() <= 1;
+  if (sameDay) return `${hours}:${minutes}`;
+  if (yesterday) return `أمس ${hours}:${minutes}`;
+  return `${date.getDate()}/${date.getMonth() + 1} ${hours}:${minutes}`;
 }
 
 const styles = StyleSheet.create({
@@ -291,22 +456,67 @@ const styles = StyleSheet.create({
   headerIcon: { width: 36, alignItems: "flex-end" },
   headerCopy: { flex: 1 },
   headerTitle: { color: "#465132", fontSize: 16, fontWeight: "800", textAlign: "right" },
-  headerSubtitle: { color: "#8A8173", fontSize: 11, marginTop: 2, textAlign: "right" },
-  listContent: { padding: 16, gap: 10, flexGrow: 1 },
+  onlineRow: { alignItems: "center", flexDirection: "row-reverse", gap: 5, marginTop: 2 },
+  onlineDot: {
+    backgroundColor: "#6B7B3F",
+    borderRadius: 4,
+    height: 8,
+    width: 8,
+  },
+  headerSubtitle: { color: "#8A8173", fontSize: 11, textAlign: "right" },
+  listContent: { padding: 16, gap: 8, flexGrow: 1 },
   bubbleRow: { flexDirection: "row", width: "100%" },
   myBubbleRow: { justifyContent: "flex-end" },
   theirBubbleRow: { justifyContent: "flex-start" },
-  bubble: { borderRadius: 18, maxWidth: "78%", paddingHorizontal: 14, paddingVertical: 10 },
-  myBubble: { backgroundColor: "#6B7B3F", borderBottomRightRadius: 5 },
-  theirBubble: { backgroundColor: "#F0EBDD", borderBottomLeftRadius: 5 },
-  bubbleText: { fontSize: 14, lineHeight: 20 },
+  groupedRow: { marginTop: -4 },
+  bubble: { borderRadius: 16, maxWidth: "80%", paddingHorizontal: 14, paddingVertical: 9 },
+  myBubble: { backgroundColor: "#6B7B3F", borderBottomRightRadius: 4 },
+  theirBubble: { backgroundColor: "#F0EBDD", borderBottomLeftRadius: 4 },
+  myGroupedBubble: { borderTopRightRadius: 5 },
+  theirGroupedBubble: { borderTopLeftRadius: 5 },
+  bubbleText: { fontSize: 14, lineHeight: 21 },
   myBubbleText: { color: "#FFFDF8" },
   theirBubbleText: { color: "#465132" },
-  timeText: { fontSize: 9, marginTop: 4 },
-  myTimeText: { color: "rgba(255,253,248,0.7)", textAlign: "right" },
-  theirTimeText: { color: "#9A907E", textAlign: "left" },
-  chatEmpty: { alignItems: "center", gap: 10, marginTop: 110, paddingHorizontal: 28 },
-  chatEmptyText: { color: "#786F61", fontSize: 12, lineHeight: 18, textAlign: "center" },
+  metaRow: {
+    alignItems: "center",
+    flexDirection: "row-reverse",
+    gap: 4,
+    marginTop: 4,
+  },
+  statusMark: { height: 12, justifyContent: "center" },
+  timeText: { fontSize: 9, marginTop: 0 },
+  myTimeText: { color: "rgba(255,253,248,0.75)" },
+  theirTimeText: { color: "#9A907E" },
+  chatEmpty: {
+    alignItems: "center",
+    gap: 10,
+    justifyContent: "center",
+    marginTop: 60,
+    paddingHorizontal: 32,
+  },
+  emptyIconWrap: {
+    alignItems: "center",
+    backgroundColor: "#F0EBDD",
+    borderRadius: 28,
+    height: 72,
+    justifyContent: "center",
+    width: 72,
+  },
+  chatEmptyTitle: { color: "#465132", fontSize: 16, fontWeight: "800" },
+  chatEmptyText: { color: "#786F61", fontSize: 12, lineHeight: 19, textAlign: "center" },
+  emptyHint: {
+    alignItems: "center",
+    backgroundColor: "#FFFDF8",
+    borderColor: "#E8E0D1",
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: "row-reverse",
+    gap: 6,
+    marginTop: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  emptyHintText: { color: "#8A8173", fontSize: 11 },
   inputBar: {
     alignItems: "center",
     backgroundColor: "#FFFDF8",
@@ -351,4 +561,20 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   backButtonText: { color: "#FFFDF8", fontSize: 14, fontWeight: "800" },
+  viewerBackdrop: {
+    alignItems: "center",
+    backgroundColor: "rgba(20,20,20,0.92)",
+    flex: 1,
+    justifyContent: "center",
+  },
+  viewerContent: { alignItems: "center", padding: 20 },
+  viewerClose: {
+    alignSelf: "flex-start",
+    marginBottom: 14,
+  },
+  viewerImage: {
+    borderRadius: 14,
+    height: 520,
+    width: 330,
+  },
 });

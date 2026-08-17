@@ -30,6 +30,8 @@ export type ChatMessage = {
   /** مرفق (صورة أو تقرير طبي PDF) إن وجد */
   attachment?: ChatAttachment;
   createdAt: number;
+  /** حالة الإرسال للرسائل الخارجة عن الجهاز: "sending" ثم "sent" */
+  deliveryStatus?: "sending" | "sent";
 };
 
 export type ChatThread = {
