@@ -3,9 +3,10 @@ import { describe, expect, it } from "vitest";
 import { ASSISTED_SERVICES, getAssistedService, getAssistedServiceProviders } from "../lib/assisted-services-directory";
 
 describe("خدمات طبية مساعدة", () => {
-  it("تتضمن رعاية كبار السن والعلاج الطبيعي كخدمتين مستقلتين", () => {
-    expect(ASSISTED_SERVICES.map((service) => service.id)).toEqual(["elderly-care", "physical-therapy"]);
+  it("تتضمن الرعاية المنزلية الأساسية والتمريض كخدمات مستقلة", () => {
+    expect(ASSISTED_SERVICES.map((service) => service.id)).toEqual(["elderly-care", "nursing", "physical-therapy"]);
     expect(getAssistedService("elderly-care").title).toBe("رعاية كبار السن");
+    expect(getAssistedService("nursing").title).toBe("التمريض المنزلي");
   });
 
   it("يرتب مقدمي الخدمة حسب القرب والتقييم والسعر", () => {

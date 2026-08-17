@@ -79,6 +79,7 @@ import {
   type NotificationChannel,
 } from "@/lib/notifications";
 import { logAdminAction, readAuditLog, type AuditLogEntry } from "@/lib/admin-audit-log";
+import { addHealthTip, readHealthTips, updateHealthTips, type HealthTip } from "@/lib/health-tips";
 import {
   providerShareAfterCommission,
   readPlatformSettings,
@@ -100,7 +101,7 @@ import {
   type AdminPinEntry,
 } from "@/lib/admin-pins";
 
-type AdminTabId = "summary" | "providers" | "ads" | "services" | "requests" | "patients" | "wallets" | "cities" | "international" | "monthly" | "notifications" | "audit" | "settings" | "permissions";
+type AdminTabId = "summary" | "providers" | "ads" | "health" | "services" | "requests" | "patients" | "wallets" | "cities" | "international" | "monthly" | "notifications" | "audit" | "settings" | "permissions";
 
 const OLIVE = "#6B7B3F";
 const GOLD = "#C9A961";
@@ -210,6 +211,7 @@ const TABS: { id: Exclude<AdminTabId, "permissions">; title: string; icon: strin
   { id: "summary", title: "نظرة عامة", icon: "📊" },
   { id: "providers", title: "مقدمو الخدمة", icon: "🏥" },
   { id: "ads", title: "الإعلانات", icon: "📢" },
+  { id: "health", title: "النصائح التوعوية", icon: "💡" },
   { id: "services", title: "الخدمات", icon: "🧩" },
   { id: "requests", title: "الطلبات", icon: "🔄" },
   { id: "patients", title: "المرضى", icon: "👥" },
@@ -316,6 +318,7 @@ export default function AdminWebScreen() {
           {tab === "summary" ? <SummaryPanel onRefresh={refresh} /> : null}
           {tab === "providers" ? <ProvidersPanel onRefresh={refresh} /> : null}
           {tab === "ads" ? <AdsPanel onRefresh={refresh} /> : null}
+          {tab === "health" ? <HealthTipsPanel onRefresh={refresh} /> : null}
           {tab === "services" ? <ServicesPanel onRefresh={refresh} /> : null}
           {tab === "requests" ? <RequestsPanel onRefresh={refresh} /> : null}
           {tab === "patients" ? <PatientsPanel onRefresh={refresh} /> : null}
@@ -1145,6 +1148,100 @@ function AdsPanel({ onRefresh }: { onRefresh: () => void }) {
     </div>
   );
 }
+
+// ══════════════════════ لوحة النصائح التوعوية ══════════════════════
+function HealthTipsPanel({ onRefresh }: { onRefresh: () => void }) {
+  const [tips, setTips] = useState<HealthTip[]>([]);
+  const [editing, setEditing] = useState<HealthTip | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [fields, setFields] = useState<Omit<HealthTip, "id" | "createdAt" | "enabled">>({
+    title: "",
+    body: "",
+    icon: "lightbulb",
+    accent: TEAL,
+    accentSoft: "#EAF3F7",
+  });
+
+  useEffect(() => {
+    void readHealthTips().then(setTips);
+  }, [onRefresh]);
+
+  const save = async () => {
+    if (!fields.title.trim() || !fields.body.trim()) {
+      window.alert("يجب إدخال عنوان النصيحة ونصّها.");
+      return;
+    }
+    const next = addHealthTip(fields);
+    const updated = editing ? tips.map((tip) => (tip.id === editing.id ? { ...next, id: editing.id, createdAt: editing.createdAt, enabled: editing.enabled } : tip)) : [next, ...tips];
+    await updateHealthTips(updated);
+    setTips(updated);
+    setEditing(null);
+    setAdding(false);
+    await logAdminAction({ action: editing ? "تعديل نصيحة توعوية" : "إضافة نصيحة توعوية", details: next.title });
+    onRefresh();
+  };
+
+  const confirmToggle = async (tip: HealthTip) => {
+    if (!window.confirm(tip.enabled ? `هل تريد إخفاء نصيحة «${tip.title}»؟` : `هل تريد إعادة إظهار نصيحة «${tip.title}»؟`)) return;
+    const updated = tips.map((item) => (item.id === tip.id ? { ...item, enabled: !item.enabled } : item));
+    await updateHealthTips(updated);
+    setTips(updated);
+    await logAdminAction({ action: tip.enabled ? "إخفاء نصيحة توعوية" : "إظهار نصيحة توعوية", details: tip.title });
+    onRefresh();
+  };
+
+  const confirmDelete = async (tip: HealthTip) => {
+    if (!window.confirm(`هل تريد حذف نصيحة «${tip.title}» نهائيًا؟`)) return;
+    const updated = tips.filter((item) => item.id !== tip.id);
+    await updateHealthTips(updated);
+    setTips(updated);
+    await logAdminAction({ action: "حذف نصيحة توعوية", details: tip.title });
+    onRefresh();
+  };
+
+  return (
+    <div>
+      <h2 style={panelTitleStyle}>النصائح التوعوية</h2>
+      <div style={panelHintStyle}>نصائح صحية تظهر في شريط توعوي على الصفحة الرئيسية للمرضى بين أيقونات الخدمات والبانر السفلي، ويمرّ كل مضمون تلقائيًا.</div>
+
+      {adding || editing ? (
+        <div style={formCardStyle}>
+          <div style={formSectionTitleStyle}>{editing ? "تعديل النصيحة" : "نصيحة جديدة"}</div>
+          <input style={inputStyle} placeholder="عنوان القصير (مثل: اشرب الماء بانتظام)" value={fields.title} onChange={(e) => setFields((current) => ({ ...current, title: e.target.value }))} />
+          <textarea style={{ ...inputStyle, minHeight: 80 }} placeholder="نص النصيحة التوعوية" value={fields.body} onChange={(e) => setFields((current) => ({ ...current, body: e.target.value }))} />
+          <div style={{ display: "flex", gap: 8 }}>
+            <button style={secondaryButtonStyle} onClick={() => { setEditing(null); setAdding(false); }}>إلغاء</button>
+            <button style={primaryButtonStyle} onClick={save}>{editing ? "حفظ التعديل" : "إضافة النصيحة"}</button>
+          </div>
+        </div>
+      ) : (
+        <button style={primaryButtonStyle} onClick={() => setAdding(true)}>+ إضافة نصيحة جديدة</button>
+      )}
+
+      {tips.length === 0 ? <div style={emptyTextStyle}>لا توجد نصائح بعد.</div> : null}
+      {tips.map((tip) => (
+        <div key={tip.id} style={{ ...cardStyle, ...(tip.enabled ? {} : dimCardStyle) }}>
+          <div style={cardHeaderStyle}>
+            <div style={cardIdentityStyle}>
+              <div style={cardNameStyle}>{tip.title}</div>
+              <div style={cardSubtitleStyle}>{tip.body}</div>
+            </div>
+            <span style={{ ...badgeStyle, backgroundColor: tip.enabled ? "#4E7A3F22" : "#B5544822", borderColor: tip.enabled ? "#4E7A3F66" : "#B5544866", color: tip.enabled ? "#4E7A3F" : "#B55448" }}>
+              {tip.enabled ? "ظاهر" : "مخفي"}
+            </span>
+          </div>
+          <div style={actionRowStyle}>
+            <button style={actionChipStyle(tip.enabled ? "#9A8159" : "#4E7A3F")} onClick={() => confirmToggle(tip)}>{tip.enabled ? "إخفاء" : "إظهار"}</button>
+            <button style={actionChipStyle("#6A6256")} onClick={() => { setEditing(tip); setFields({ ...tip }); setAdding(false); }}>تعديل</button>
+            <button style={actionChipStyle("#B55448")} onClick={() => confirmDelete(tip)}>حذف</button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const TEAL = "#3B82A6";
 
 // ══════════════════════ لوحة الخدمات ══════════════════════
 function ServicesPanel({ onRefresh }: { onRefresh: () => void }) {

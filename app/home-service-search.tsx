@@ -7,10 +7,14 @@ import { ProviderResultCard } from "@/components/provider-result-card";
 import { ScreenContainer } from "@/components/screen-container";
 import { getHomeService, getHomeServiceProviders, HOME_SERVICE_SORT_LABELS, type HomeServiceSort } from "@/lib/home-service-directory";
 import { getPatientProfile, type PatientAddress, type PatientProfile } from "@/lib/patient-profile";
-import { mergeNutritionProviders, mergeVeterinaryProviders, readProviderAccounts, type ProviderAccount } from "@/lib/provider-registry";
+import { mergeNursingProviders, mergeMentalHealthProviders, mergePhysioProviders, mergeSeniorCareProviders, mergeNutritionProviders, mergeVeterinaryProviders, readProviderAccounts, type ProviderAccount } from "@/lib/provider-registry";
 import { buildDemoProviderAccount } from "@/lib/demo-provider";
 
 const PROVIDER_MERGE: Record<string, (accounts: ProviderAccount[]) => ProviderAccount[]> = {
+  "nursing": mergeNursingProviders,
+  "mental-health": mergeMentalHealthProviders,
+  "physical-therapy": mergePhysioProviders,
+  "elderly-care": mergeSeniorCareProviders,
   "nutrition-health-beauty": mergeNutritionProviders,
   veterinary: mergeVeterinaryProviders,
 };

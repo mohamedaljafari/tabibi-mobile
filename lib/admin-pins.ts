@@ -15,6 +15,7 @@ export type AdminTabId =
   | "summary"
   | "providers"
   | "ads"
+  | "health"
   | "services"
   | "requests"
   | "patients"
@@ -34,6 +35,7 @@ export const ALL_ADMIN_TABS: { id: AdminTabId; title: string }[] = [
   { id: "summary", title: "نظرة عامة" },
   { id: "providers", title: "مقدمو الخدمة" },
   { id: "ads", title: "الإعلانات" },
+  { id: "health", title: "النصائح التوعوية" },
   { id: "services", title: "الخدمات" },
   { id: "requests", title: "الطلبات" },
   { id: "patients", title: "المرضى" },

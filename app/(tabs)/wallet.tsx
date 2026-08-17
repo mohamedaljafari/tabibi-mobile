@@ -9,7 +9,7 @@
 import { useCallback, useState } from "react";
 import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import { useFocusEffect } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { ScreenContainer } from "@/components/screen-container";
 import { getPatientProfile } from "@/lib/patient-profile";
 import {
@@ -72,8 +72,14 @@ export default function WalletScreen() {
 
   if (!summary) {
     return (
-      <ScreenContainer className="items-center justify-center">
+      <ScreenContainer className="items-center justify-center gap-4 p-6">
         <Text style={styles.emptyText}>أنشئ حسابك أولًا لعرض محفظتك المحاسبية.</Text>
+        <Pressable
+          onPress={() => router.push("/login")}
+          style={({ pressed }) => [styles.loginButton, pressed && { opacity: 0.8 }]}
+        >
+          <Text style={styles.loginButtonText}>تسجيل الدخول / إنشاء حساب</Text>
+        </Pressable>
       </ScreenContainer>
     );
   }
@@ -242,4 +248,11 @@ const styles = StyleSheet.create({
   },
   entryMeta: { color: "#B7AFA0", fontSize: 10, marginTop: 2, textAlign: "right" },
   entryAmount: { fontSize: 14, fontWeight: "800" },
+  loginButton: {
+    backgroundColor: "#6B7B3F",
+    borderRadius: 999,
+    paddingHorizontal: 28,
+    paddingVertical: 12,
+  },
+  loginButtonText: { color: "#FFFFFF", fontSize: 14, fontWeight: "800" },
 });

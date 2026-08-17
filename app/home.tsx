@@ -30,6 +30,9 @@ const SERVICES: Service[] = [
   { title: "طبيب", icon: "medical-services", tint: "#6B7B3F", surface: "#EFF2E6" },
   { title: "الاستشارات الطبية", icon: "videocam", tint: "#5B8CA3", surface: "#EAF3F7" },
   { title: "خدمات طبية مساعدة", icon: "medical-services", tint: "#6B7B3F", surface: "#EFF2E6" },
+  { title: "تمريض", icon: "local-hospital", tint: "#627F9D", surface: "#EBF1F6" },
+  { title: "علاج طبيعي", icon: "accessibility-new", tint: "#628C8B", surface: "#E8F3F2" },
+  { title: "عناية كبار السن", icon: "elderly", tint: "#7B8A62", surface: "#F0F3EA" },
   { title: "صحة نفسية", icon: "psychology", tint: "#8F7D98", surface: "#F2EDF4" },
   { title: "التغذية والصحة والجمال", icon: "restaurant", tint: "#B97E52", surface: "#FBEEE7" },
   { title: "طب بيطري", icon: "pets", tint: "#A07255", surface: "#F7EDE7" },
@@ -43,20 +46,34 @@ const DEFAULT_AD_SLIDES: AdSlide[] = [
   { id: "default-top-3", eyebrow: "الصيدليات", title: "كل ما تحتاجه في مكان واحد", copy: "انتقل إلى خدمات الصيدليات من شبكة طبيبي.", icon: "local-pharmacy", accent: "#A65E67", accentSoft: "#F8ECEE" },
 ];
 
-const DEFAULT_BOTTOM_AD: AdSlide = {
-  id: "default-bottom-1",
-  eyebrow: "رعاية على مدار الساعة",
-  title: "إسعاف منزلي عند الحاجة",
-  copy: "خدمات طبية منزلية تصلك أينما كنت.",
-  icon: "local-hospital",
-  accent: "#6B7B3F",
-  accentSoft: "#EFF2E6",
-};
+const DEFAULT_BOTTOM_ADS: AdSlide[] = [
+  {
+    id: "default-bottom-1",
+    eyebrow: "رعاية على مدار الساعة",
+    title: "إسعاف منزلي عند الحاجة",
+    copy: "خدمات طبية منزلية تصلك أينما كنت.",
+    icon: "local-hospital",
+    accent: "#6B7B3F",
+    accentSoft: "#EFF2E6",
+  },
+  {
+    id: "default-bottom-2",
+    eyebrow: "عروض حصرية",
+    title: "تابع عروض الصيدليات والمختبرات",
+    copy: "خصومات يومية على الأدوية والتحاليل من قسم العروض.",
+    icon: "local-offer",
+    accent: "#5D7D9B",
+    accentSoft: "#EAF1F7",
+  },
+];
 
 const SERVICES_TO_CATALOG_KEY: Record<string, string> = {
   "طبيب": "doctor",
   "الاستشارات الطبية": "consultation",
   "خدمات طبية مساعدة": "assisted",
+  "تمريض": "nursing",
+  "علاج طبيعي": "physical-therapy",
+  "عناية كبار السن": "elderly-care",
   "صحة نفسية": "mental-health",
   "التغذية والصحة والجمال": "nutrition",
   "طب بيطري": "veterinary",
@@ -68,7 +85,9 @@ export default function HomeScreen() {
   const [profile, setProfile] = useState<PatientProfile | null>(null);
   const [topAds, setTopAds] = useState<AdSlide[]>(DEFAULT_AD_SLIDES);
   const [visibleServices, setVisibleServices] = useState<Service[]>(SERVICES);
-  const [bottomAd, setBottomAd] = useState<AdSlide>(DEFAULT_BOTTOM_AD);
+  const [bottomAds, setBottomAds] = useState<AdSlide[]>(DEFAULT_BOTTOM_ADS);
+  const [bottomSlide, setBottomSlide] = useState(0);
+  const [healthTips, setHealthTips] = useState<import("@/lib/health-tips").HealthTip[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [activeSlide, setActiveSlide] = useState(0);
   const activeSlideRef = useRef(0);
@@ -79,15 +98,21 @@ export default function HomeScreen() {
   const loadProfile = useCallback(async () => setProfile(await getPatientProfile()), []);
   useEffect(() => { loadProfile(); }, [loadProfile]);
 
+  const loadHealthTips = useCallback(async () => {
+    const { readHealthTips } = await import("@/lib/health-tips");
+    setHealthTips((await readHealthTips()).filter((tip) => tip.enabled));
+  }, []);
+  useEffect(() => { loadHealthTips(); }, [loadHealthTips]);
+
   const loadAdminAds = useCallback(async () => {
     const { readAdminAds, readServicesCatalog } = await import("@/lib/admin");
     const ads = await readAdminAds();
     const top = ads.filter((ad) => ad.enabled && ad.position === "top");
     const bottom = ads.filter((ad) => ad.enabled && ad.position === "bottom");
     const mappedTop: AdSlide[] = top.length > 0 ? top.map((ad) => ({ ...ad, icon: ad.icon as AdSlide["icon"] })) : DEFAULT_AD_SLIDES;
-    const mappedBottom: AdSlide = bottom.length > 0 ? { ...bottom[0], icon: bottom[0].icon as AdSlide["icon"] } : DEFAULT_BOTTOM_AD;
+    const mappedBottom: AdSlide[] = bottom.length > 0 ? bottom.map((ad) => ({ ...ad, icon: ad.icon as AdSlide["icon"] })) : DEFAULT_BOTTOM_ADS;
     setTopAds(mappedTop);
-    setBottomAd(mappedBottom);
+    setBottomAds(mappedBottom);
     const catalog = await readServicesCatalog();
     setVisibleServices(SERVICES.filter((service) => catalog.services.find((item) => item.key === SERVICES_TO_CATALOG_KEY[service.title])?.enabled ?? true));
   }, []);
@@ -134,6 +159,18 @@ export default function HomeScreen() {
     }
     if (serviceName === "صحة نفسية") {
       router.push("/mental-health-specialties" as never);
+      return;
+    }
+    if (serviceName === "تمريض") {
+      router.push({ pathname: "/home-service-search", params: { serviceId: "nursing" } } as never);
+      return;
+    }
+    if (serviceName === "علاج طبيعي") {
+      router.push({ pathname: "/home-service-search", params: { serviceId: "physical-therapy" } } as never);
+      return;
+    }
+    if (serviceName === "عناية كبار السن") {
+      router.push({ pathname: "/home-service-search", params: { serviceId: "elderly-care" } } as never);
       return;
     }
     if (serviceName === "التغذية والصحة والجمال") {
@@ -224,13 +261,124 @@ export default function HomeScreen() {
           ))}
         </View>
 
-        <View style={styles.bottomBanner}>
-          <View style={styles.bottomGraphic}><MaterialIcons name={(bottomAd.icon as ComponentProps<typeof MaterialIcons>["name"]) || "support-agent"} size={25} color={bottomAd.accent} /></View>
-          <View style={styles.bottomCopy}><Text style={styles.bottomTitle}>{bottomAd.title}</Text><Text style={styles.bottomText}>{bottomAd.copy}</Text></View>
-          <Pressable accessibilityRole="button" accessibilityLabel="بدء طلب خدمة" onPress={() => router.push("/care-request" as never)} style={({ pressed }) => [styles.requestButton, pressed && styles.requestPressed]}><MaterialIcons name="arrow-back" size={19} color="#FFFFFF" /></Pressable>
-        </View>
+        <HealthTipsCarousel tips={healthTips} />
+        <BottomAdSlider ads={bottomAds} onSlide={setBottomSlide} />
+        {bottomAds.length > 1 && (
+          <View style={styles.dots}>
+            {bottomAds.map((slide, index) => <View key={slide.id ?? slide.title} style={[styles.dot, index === bottomSlide && styles.activeDot]} />)}
+          </View>
+        )}
       </ScrollView>
     </ScreenContainer>
+  );
+}
+
+function HealthTipsCarousel({ tips }: { tips: import("@/lib/health-tips").HealthTip[] }) {
+  const { width } = useWindowDimensions();
+  const itemWidth = Math.max(width - 32, 280);
+  const listRef = useRef<FlatList<import("@/lib/health-tips").HealthTip>>(null);
+  const activeRef = useRef(0);
+  const [, setActiveIndex] = useState(0);
+
+  useEffect(() => {
+    if (tips.length <= 1) return;
+    const timer = setInterval(() => {
+      const next = (activeRef.current + 1) % tips.length;
+      listRef.current?.scrollToIndex({ index: next, animated: true });
+      activeRef.current = next;
+      setActiveIndex(next);
+    }, 6000);
+    return () => clearInterval(timer);
+  }, [tips.length]);
+
+  useEffect(() => {
+    activeRef.current = 0;
+    setActiveIndex(0);
+  }, [tips]);
+
+  if (tips.length === 0) return null;
+
+  return (
+    <View style={styles.tipsWrap}>
+      <View style={styles.tipsHeaderRow}>
+        <MaterialIcons name="lightbulb-outline" size={15} color="#8A8173" />
+        <Text style={styles.tipsHeader}>نصائح صحية</Text>
+      </View>
+      <FlatList
+        ref={listRef}
+        data={tips}
+        horizontal
+        pagingEnabled
+        bounces={false}
+        decelerationRate="fast"
+        showsHorizontalScrollIndicator={false}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <View style={[styles.tipCard, { width: itemWidth, backgroundColor: item.accentSoft }]}>
+            <View style={[styles.tipIcon, { backgroundColor: item.accent }]}><MaterialIcons name={item.icon} size={18} color="#FFFFFF" /></View>
+            <View style={styles.tipCopy}>
+              <Text style={[styles.tipTitle, { color: item.accent }]}>{item.title}</Text>
+              <Text style={styles.tipBody}>{item.body}</Text>
+            </View>
+          </View>
+        )}
+      />
+    </View>
+  );
+}
+
+function BottomAdSlider({ ads, onSlide }: { ads: AdSlide[]; onSlide: (index: number) => void }) {
+  const [activeIndex, setActiveIndex] = useState(0);
+  const activeRef = useRef(0);
+  const listRef = useRef<FlatList<AdSlide>>(null);
+  const { width } = useWindowDimensions();
+  const itemWidth = Math.max(width - 32, 280);
+
+  useEffect(() => {
+    if (ads.length <= 1) return;
+    const timer = setInterval(() => {
+      const next = (activeRef.current + 1) % ads.length;
+      listRef.current?.scrollToIndex({ index: next, animated: true });
+      activeRef.current = next;
+      setActiveIndex(next);
+      onSlide(next);
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [ads.length, onSlide]);
+
+  useEffect(() => {
+    activeRef.current = 0;
+    setActiveIndex(0);
+  }, [ads]);
+
+  const handleScrollEnd = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const index = Math.round(event.nativeEvent.contentOffset.x / itemWidth);
+    activeRef.current = index;
+    setActiveIndex(index);
+    onSlide(index);
+  };
+
+  return (
+    <View style={styles.bottomBannerWrap}>
+      <FlatList
+        ref={listRef}
+        data={ads}
+        horizontal
+        pagingEnabled
+        bounces={false}
+        decelerationRate="fast"
+        showsHorizontalScrollIndicator={false}
+        keyExtractor={(item) => item.id ?? item.title}
+        onMomentumScrollEnd={handleScrollEnd}
+        renderItem={({ item }) => (
+          <View style={[styles.bottomBanner, { width: itemWidth, backgroundColor: item.accentSoft, borderColor: "#E4DCCB" }]}>
+            <View style={styles.bottomGraphic}><MaterialIcons name={item.icon || "support-agent"} size={25} color={item.accent} /></View>
+            <View style={styles.bottomCopy}><Text style={styles.bottomTitle}>{item.title}</Text><Text style={styles.bottomText}>{item.copy}</Text></View>
+            <Pressable accessibilityRole="button" accessibilityLabel="بدء طلب خدمة" onPress={() => router.push("/care-request" as never)} style={({ pressed }) => [styles.requestButton, { backgroundColor: item.accent }, pressed && styles.requestPressed]}><MaterialIcons name="arrow-back" size={19} color="#FFFFFF" /></Pressable>
+          </View>
+        )}
+      />
+    </View>
   );
 }
 
@@ -265,7 +413,16 @@ const styles = StyleSheet.create({
   serviceIcon: { alignItems: "center", borderRadius: 12, height: 38, justifyContent: "center", width: 38 },
   serviceTitle: { color: "#5A624B", fontSize: 10, fontWeight: "800", lineHeight: 14, marginTop: 5, textAlign: "center" },
   servicePressed: { opacity: 0.76, transform: [{ scale: 0.97 }] },
-  bottomBanner: { alignItems: "center", backgroundColor: "#F0EBDD", borderColor: "#E4DCCB", borderRadius: 17, borderWidth: 1, flexDirection: "row-reverse", gap: 9, marginTop: 14, padding: 11 },
+  tipsWrap: { marginTop: 14 },
+  tipsHeaderRow: { alignItems: "center", flexDirection: "row-reverse", gap: 4 },
+  tipsHeader: { color: "#8A8173", fontSize: 11, fontWeight: "800" },
+  tipCard: { alignItems: "center", borderRadius: 17, borderColor: "#E4DCCB", borderWidth: 1, flexDirection: "row-reverse", gap: 9, height: 60, marginTop: 7, paddingHorizontal: 11 },
+  tipIcon: { alignItems: "center", borderRadius: 12, height: 34, justifyContent: "center", width: 34 },
+  tipCopy: { flex: 1 },
+  tipTitle: { fontSize: 11, fontWeight: "800", textAlign: "right" },
+  tipBody: { color: "#8A8173", fontSize: 10, lineHeight: 13, marginTop: 1, textAlign: "right" },
+  bottomBannerWrap: { borderRadius: 20, marginTop: 14, overflow: "hidden" },
+  bottomBanner: { alignItems: "center", backgroundColor: "#F0EBDD", borderColor: "#E4DCCB", borderRadius: 17, borderWidth: 1, flexDirection: "row-reverse", gap: 9, padding: 11 },
   bottomGraphic: { alignItems: "center", backgroundColor: "#FFFDF8", borderRadius: 13, height: 42, justifyContent: "center", width: 42 },
   bottomCopy: { flex: 1 },
   bottomTitle: { color: "#465132", fontSize: 12, fontWeight: "800", textAlign: "right" },

@@ -3,14 +3,14 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 export const PATIENT_PROFILE_KEY = "tabibi.patient-profile.v1";
 export const MEDICAL_ACCESS_KEY = "medical_access_v1";
 
-export type AddressSource = "map" | "current-location";
+export type AddressSource = "map" | "current-location" | "manual";
 
 export type PatientAddress = {
   id: string;
   label: string;
   addressLabel: string;
-  latitude: number;
-  longitude: number;
+  latitude?: number;
+  longitude?: number;
   source: AddressSource;
   /** مدينة ليبية مرتبطة بالعنوان (تُحدد تلقائيًا عند استخدام الموقع الحالي). */
   cityId?: string;
@@ -34,6 +34,20 @@ export type ClinicalEntry = {
   details: string;
   providerName?: string;
   createdAt: string;
+  /** ملفات مرفقة (صور / تقارير) أضافها المريض أو مقدم الخدمة لهذا الإدخال */
+  attachments?: ClinicalAttachment[];
+};
+
+/** ملف طبي مرفق يُحفظ كاملًا محليًا (base64) ولا يُرفع لأي خادم. */
+export type ClinicalAttachment = {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  /** حجم الملف بالبايت */
+  sizeBytes: number;
+  createdAt: string;
+  /** محتوى الملف المشفر base64 */
+  base64: string;
 };
 
 export type MedicalRecord = {
@@ -43,6 +57,14 @@ export type MedicalRecord = {
   createdAt: string;
   /** إدخالات سريرية (تشخيصات / وصفات / خدمات) يضيفها مقدمو الخدمة المصرح لهم */
   entries: ClinicalEntry[];
+  /** ملفات رفع المريض المباشر في هذا الملف (مستقلة عن الإدخالات السريرية) */
+  patientUploads?: PatientMedicalUpload[];
+};
+
+/** رفع مباشر من المريض إلى ملفه الطبي مع عنوان اختياري */
+export type PatientMedicalUpload = ClinicalAttachment & {
+  title: string;
+  description?: string;
 };
 
 /**
@@ -337,6 +359,66 @@ export function isProviderAccessGranted(
 /** التحقق من صلاحية مقدم خدمة لكل الملفات (مفيد للشريك) */
 export function getProviderAccess(grants: MedicalAccessGrant[], providerId: string): MedicalAccessGrant | null {
   return grants.find((grant) => grant.providerId === providerId) ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// رفع الملفات الطبية من المريض مباشرة إلى ملفه الطبي
+// ---------------------------------------------------------------------------
+
+export type MedicalUploadInput = {
+  recordId: string;
+  recordOwnerName: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  base64: string;
+  title: string;
+  description?: string;
+};
+
+/** قراءة ملف طبي مخزّن محليًا من خلال عنوان URI (مجلد الصور أو المستندات). */
+export async function readMedicalFile(uri: string): Promise<Pick<MedicalUploadInput, "fileName" | "mimeType" | "sizeBytes" | "base64"> | null> {
+  const { readAsStringAsync, EncodingType } = await import("expo-file-system/legacy");
+  const { getInfoAsync } = await import("expo-file-system/legacy");
+  const info = await getInfoAsync(uri);
+  if (!info.exists || !info.size) return null;
+  const base64 = await readAsStringAsync(uri, { encoding: EncodingType.Base64 });
+  const fileName = uri.split("/").filter(Boolean).pop() ?? "ملف طبي";
+  return { fileName, mimeType: "application/octet-stream", sizeBytes: info.size, base64 };
+}
+
+/** إضافة ملف رفع مباشر من المريض إلى ملفه الطبي المحدد. */
+export async function addPatientMedicalUpload(input: MedicalUploadInput): Promise<PatientProfile | null> {
+  const current = await getPatientProfile();
+  if (!current) return null;
+  const attachment: PatientMedicalUpload = {
+    id: createId("medical-upload"),
+    fileName: input.fileName,
+    mimeType: input.mimeType,
+    sizeBytes: input.sizeBytes,
+    createdAt: new Date().toISOString(),
+    base64: input.base64,
+    title: input.title.trim(),
+    description: input.description?.trim(),
+  };
+  const records = current.medicalRecords.map((record) =>
+    record.id === input.recordId
+      ? { ...record, patientUploads: [...(record.patientUploads ?? []), attachment] }
+      : record,
+  );
+  return persistProfile({ ...current, medicalRecords: records });
+}
+
+/** حذف ملف رفع مباشر من ملف طبي. */
+export async function removePatientMedicalUpload(recordId: string, uploadId: string): Promise<PatientProfile | null> {
+  const current = await getPatientProfile();
+  if (!current) return null;
+  const records = current.medicalRecords.map((record) =>
+    record.id === recordId
+      ? { ...record, patientUploads: (record.patientUploads ?? []).filter((upload) => upload.id !== uploadId) }
+      : record,
+  );
+  return persistProfile({ ...current, medicalRecords: records });
 }
 
 /** إضافة إدخال سريري (تشخيص / وصفة / خدمة) إلى ملف طبي للمالك المعين */

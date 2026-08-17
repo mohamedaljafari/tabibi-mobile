@@ -1,7 +1,7 @@
 import type { ComponentProps } from "react";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 
-export type HomeServiceId = "nutrition-health-beauty" | "veterinary";
+export type HomeServiceId = "nursing" | "mental-health" | "physical-therapy" | "elderly-care" | "nutrition-health-beauty" | "veterinary";
 export type HomeServiceSort = "nearest" | "rating" | "price-high" | "price-low";
 
 export type HomeService = {
@@ -24,11 +24,19 @@ export type HomeServiceProvider = {
 };
 
 export const HOME_SERVICES: HomeService[] = [
+  { id: "nursing", title: "التمريض المنزلي", providerType: "ممرض", icon: "local-hospital", tint: "#627F9D", surface: "#EBF1F6" },
+  { id: "mental-health", title: "الصحة النفسية", providerType: "أخصائي صحة نفسية", icon: "psychology", tint: "#8F7D98", surface: "#F2EDF4" },
+  { id: "physical-therapy", title: "العلاج الطبيعي", providerType: "أخصائي علاج طبيعي", icon: "accessibility-new", tint: "#628C8B", surface: "#E8F3F2" },
+  { id: "elderly-care", title: "رعاية كبار السن", providerType: "مقدم رعاية", icon: "elderly", tint: "#7B8A62", surface: "#F0F3EA" },
   { id: "nutrition-health-beauty", title: "التغذية والصحة والجمال", providerType: "أخصائي تغذية", icon: "restaurant", tint: "#B97E52", surface: "#FBEEE7" },
   { id: "veterinary", title: "الطب البيطري", providerType: "طبيب بيطري", icon: "pets", tint: "#A07255", surface: "#F7EDE7" },
 ];
 
 const PROVIDERS: Record<HomeServiceId, HomeServiceProvider[]> = {
+  "nursing": [],
+  "mental-health": [],
+  "physical-therapy": [],
+  "elderly-care": [],
   "nutrition-health-beauty": [
     { id: "nutrition-1", name: "أ. دينا سامر", rating: 4.9, reviewCount: 137, price: 190, distanceKm: 1.5, initials: "دس" },
     { id: "nutrition-2", name: "أ. رنا خالد", rating: 4.8, reviewCount: 102, price: 170, distanceKm: 2.6, initials: "رخ" },

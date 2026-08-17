@@ -4,7 +4,7 @@ import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 export type AssistedServiceSort = "nearest" | "rating" | "price-high" | "price-low";
 
 export type AssistedService = {
-  id: "elderly-care" | "physical-therapy";
+  id: "elderly-care" | "physical-therapy" | "nursing";
   title: string;
   singularProviderLabel: string;
   icon: ComponentProps<typeof MaterialIcons>["name"];
@@ -24,6 +24,7 @@ export type AssistedServiceProvider = {
 
 export const ASSISTED_SERVICES: AssistedService[] = [
   { id: "elderly-care", title: "رعاية كبار السن", singularProviderLabel: "مقدم رعاية", icon: "elderly", tint: "#7B8A62", surface: "#F0F3EA" },
+  { id: "nursing", title: "التمريض المنزلي", singularProviderLabel: "ممرض", icon: "local-hospital", tint: "#627F9D", surface: "#EBF1F6" },
   { id: "physical-therapy", title: "العلاج الطبيعي", singularProviderLabel: "أخصائي علاج طبيعي", icon: "accessibility-new", tint: "#628C8B", surface: "#E8F3F2" },
 ];
 
@@ -39,6 +40,12 @@ const PROVIDERS: Record<AssistedService["id"], AssistedServiceProvider[]> = {
     { id: "therapy-2", name: "الأخصائية دانا فهد", rating: 4.8, reviewCount: 83, price: 220, distanceKm: 2.7, initials: "دف" },
     { id: "therapy-3", name: "الأخصائي فهد ناصر", rating: 4.7, reviewCount: 59, price: 200, distanceKm: 4.3, initials: "فن" },
     { id: "therapy-4", name: "الأخصائية سمر علي", rating: 4.6, reviewCount: 42, price: 280, distanceKm: 5.5, initials: "سع" },
+  ],
+  nursing: [
+    { id: "nursing-1", name: "الممرضة هالة عبد السلام", rating: 4.9, reviewCount: 132, price: 150, distanceKm: 1.2, initials: "هع" },
+    { id: "nursing-2", name: "الممرض يوسف الفيتوري", rating: 4.8, reviewCount: 97, price: 140, distanceKm: 2.4, initials: "يغ" },
+    { id: "nursing-3", name: "الممرضة نجلاء الصادق", rating: 4.7, reviewCount: 66, price: 130, distanceKm: 3.8, initials: "نص" },
+    { id: "nursing-4", name: "الممرض خالد المبروك", rating: 4.6, reviewCount: 51, price: 160, distanceKm: 4.9, initials: "خم" },
   ],
 };
 

@@ -93,7 +93,7 @@ export default function LabQuoteScreen() {
       Alert.alert("أكمل بيانات الطلب", errorMessage);
       return;
     }
-    Alert.alert("تم إرسال طلب عرض السعر", `سيُحفظ طلب المختبر محليًا في هذه النسخة. نطاق البحث: ${getLabScopeSummary({ scope, city: cityName, selectedAreas, distanceKm })}.`, [{ text: "عرض العروض", onPress: () => router.replace({ pathname: "/quote-offers", params: { source: "lab" } } as never) }]);
+    router.push({ pathname: "/quote-offers", params: { source: "lab", justSubmitted: "1" } } as never);
   };
 
   return (
