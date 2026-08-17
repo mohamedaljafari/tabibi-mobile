@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 
 import { FormField } from "@/components/form-field";
 import { ScreenContainer } from "@/components/screen-container";
 import { TabibiBrand } from "@/components/tabibi-logo";
-import { hasRegistrationErrors, savePatientProfile, validateRegistration, type RegistrationInput, type RegistrationValidation } from "@/lib/patient-profile";
+import { registerWithPhone } from "@/lib/auth-supabase";
+import { hasRegistrationErrors, validateRegistration, type RegistrationInput, type RegistrationValidation } from "@/lib/patient-profile";
 
 const INITIAL_FORM: RegistrationInput = { fullName: "", phone: "", password: "", confirmPassword: "" };
 
@@ -26,7 +27,16 @@ export default function RegisterScreen() {
 
     setIsSubmitting(true);
     try {
-      await savePatientProfile(form);
+      const result = await registerWithPhone({
+        fullName: form.fullName,
+        phone: form.phone,
+        password: form.password,
+        role: "patient",
+      });
+      if ("error" in result) {
+        Alert.alert("تعذر إنشاء الحساب", result.error);
+        return;
+      }
       router.replace("/profile");
     } finally {
       setIsSubmitting(false);
