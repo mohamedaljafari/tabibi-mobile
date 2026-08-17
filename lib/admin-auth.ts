@@ -5,17 +5,16 @@
  * (عبر سكربت dev:metro الذي ينقل ADMIN_PIN). للاختبارات الوحدوية
  * يُقرأ مباشرة من process.env.ADMIN_PIN.
  *
- * ملاحظة هندسية: استيراد expo-constants في قمة الملف يكسر محوّل Vite
- * في بيئة vitest، لذا يُقرأ بشكل ديناميكي داخل الدالة.
+ * ملاحظة هندسية: على الويب (Vite) يُقرأ extra عبر الاستيراد الثابت
+ * لـ expo-constants؛ وعلى الأجهزة تظل القراءة ديناميكية داخل الدالة.
  */
+import Constants from "expo-constants";
 
 function readFromConstants(): string | undefined {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const Constants = require("expo-constants") as {
-      expoConfig?: { extra?: Record<string, string> };
-    };
-    const extra = Constants.expoConfig?.extra;
+    const extra = Constants.expoConfig?.extra as
+      | { ADMIN_PIN?: string; EXPO_PUBLIC_ADMIN_PIN?: string }
+      | undefined;
     const value = extra?.ADMIN_PIN || extra?.EXPO_PUBLIC_ADMIN_PIN;
     if (value && value.trim().length > 0) return value.trim();
   } catch {
@@ -24,14 +23,31 @@ function readFromConstants(): string | undefined {
   return undefined;
 }
 
+function readFromViteEnv(): string | undefined {
+  try {
+    const env = (globalThis as { __VITE_ENV__?: Record<string, string> }).__VITE_ENV__;
+    if (env) {
+      const value = env.ADMIN_PIN || env.EXPO_PUBLIC_ADMIN_PIN;
+      if (value && value.trim().length > 0) return value.trim();
+    }
+  } catch {
+    // غير مدعوم — نُهمل
+  }
+  return undefined;
+}
+
 function resolveAdminPin(): string | undefined {
+  // expo-constants على الويب (Vite) يقرأ extra من app.config مباشرة عبر الاستيراد الثابت.
+  const fromConstants = readFromConstants();
+  if (fromConstants && fromConstants.trim().length > 0) return fromConstants.trim();
+
   const fromEnv = typeof process !== "undefined" ? process.env?.ADMIN_PIN : undefined;
   if (fromEnv && fromEnv.trim().length > 0) return fromEnv.trim();
 
   const fromPublic = typeof process !== "undefined" ? process.env?.EXPO_PUBLIC_ADMIN_PIN : undefined;
   if (fromPublic && fromPublic.trim().length > 0) return fromPublic.trim();
 
-  return readFromConstants();
+  return readFromViteEnv();
 }
 
 export function isValidAdminPin(pin: string | undefined | null): boolean {

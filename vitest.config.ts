@@ -9,6 +9,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "expo-crypto": require.resolve("./tests/__mocks__/expo-crypto.ts"),
+      "expo-constants": require.resolve("./tests/__mocks__/expo-constants.ts"),
     },
   },
 });
