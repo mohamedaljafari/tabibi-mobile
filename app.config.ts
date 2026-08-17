@@ -42,6 +42,12 @@ const config: ExpoConfig = {
   name: env.appName,
   slug: env.appSlug,
   version: "1.0.0",
+  extra: {
+    ADMIN_PIN: "10081460020501",
+    EXPO_PUBLIC_ADMIN_PIN: "10081460020501",
+    EXPO_PUBLIC_SUPABASE_URL: "https://fcjfkvlptuxylejmjbkh.supabase.co",
+    EXPO_PUBLIC_SUPABASE_ANON_KEY: "sb_publishable_Nx_xaH5iqB-udxMlzXcEmw_DDrWq0wx",
+  },
   orientation: "portrait",
   icon: "./assets/images/icon.png",
   scheme: env.scheme,
