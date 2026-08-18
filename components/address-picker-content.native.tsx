@@ -6,6 +6,8 @@ import * as Location from "expo-location";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { addPatientAddress, type AddressSource } from "@/lib/patient-profile";
+import { getAuthState } from "@/lib/auth-supabase";
+import { addPatientAddress as addSupabaseAddress } from "@/lib/records-supabase";
 import {
   getLibyaCities,
   getEnabledCities,
@@ -118,33 +120,49 @@ export default function AddressPickerContent() {
   };
 
   const saveAddress = async () => {
-    if (!selectedCity || !selectedArea || (!selectedCityId && !locatedName)) {
-      Alert.alert("أكمل البيانات", "اختر المدينة والمنطقة، أو استخدم موقعك الحالي أولًا.");
+    const hasManualSelection = selectedCity && selectedArea;
+    const hasLocated = !!locatedName;
+    if (!hasManualSelection && !hasLocated) {
+      Alert.alert("أكمل البيانات", "اختر مدينتك ومنطقتك، أو استخدم موقعك الحالي أولًا.");
       return;
     }
 
     setIsSaving(true);
     try {
-      const current = await import("@/lib/patient-profile").then((m) => m.getPatientProfile());
       const all = await getLibyaCities();
       const enabled = getEnabledCities(all);
       const city = enabled.find((c) => c.id === (selectedCityId ?? TRIPOLI_CITY_ID)) ?? enabled[0];
       const cityData = city ? { cityId: city.id } : undefined;
+      const addressLabel = locationSummary || locatedName || `${city?.name ?? "ليبيا"} — ${selectedArea ?? ""}`.trim();
+      const commonPayload = {
+        label: safeLabel,
+        addressLabel,
+        ...(cityData ?? {}),
+      };
       if (coordinates) {
         await addPatientAddress({
-          label: safeLabel,
-          addressLabel: locationSummary || locatedName || `${city?.name ?? "ليبيا"} — ${selectedArea ?? ""}`.trim(),
+          ...commonPayload,
           ...coordinates,
           source: locatedName ? ("current-location" as AddressSource) : ("map" as AddressSource),
-          ...(cityData ?? {}),
         });
       } else {
         await addPatientAddress({
-          label: safeLabel,
-          addressLabel: locationSummary || `${city?.name ?? "ليبيا"} — ${selectedArea ?? ""}`.trim(),
+          ...commonPayload,
           source: "manual" as AddressSource,
-          ...(cityData ?? {}),
         });
+      }
+      // حفظ العنوان أيضًا في سجل التطبيق المركزي حتى يظهر في «حسابي».
+      const auth = await getAuthState();
+      if (auth?.user) {
+        const supabaseSource = locatedName ? ("current-location" as const) : ("map" as const);
+        void addSupabaseAddress(auth.user, {
+          label: safeLabel,
+          addressLabel,
+          latitude: coordinates?.latitude ?? 0,
+          longitude: coordinates?.longitude ?? 0,
+          source: supabaseSource,
+          ...(cityData ?? {}),
+        }).catch(() => undefined);
       }
       router.back();
     } catch {

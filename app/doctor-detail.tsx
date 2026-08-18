@@ -35,12 +35,14 @@ import { getProviderRatingSummary, getProviderRatings, type ProviderRating } fro
 import { useEffect as useEffectRating } from "react";
 
 export default function DoctorDetailScreen() {
-  const { specialtyId, providerId, demoDoctorId, addressDetails: addressDetailsParam } = useLocalSearchParams<{
+  const { specialtyId, providerId, demoDoctorId, addressDetails: addressDetailsParam, general } = useLocalSearchParams<{
     specialtyId?: string;
     providerId?: string;
     demoDoctorId?: string;
     addressDetails?: string;
+    general?: string;
   }>();
+  const generalMode = general === "1";
   const specialty = getDoctorSpecialty(specialtyId);
 
   const [accounts, setAccounts] = useState<ProviderAccount[]>([]);
@@ -131,8 +133,28 @@ export default function DoctorDetailScreen() {
    */
   const isOnlineService = activeProvider ? inferDeliveryMode(activeProvider) === "online" : false;
 
+  const isGeneralRequest = generalMode && selectedServices.size === 0;
+
   const promptAddressAndSubmit = () => {
-    if (!activeProvider || selectedServices.size === 0 || submitting) return;
+    if (!activeProvider || submitting) return;
+    if (!isGeneralRequest && selectedServices.size === 0) return;
+    if (isGeneralRequest) {
+      const addressChoices = providerAddresses;
+      if (addressChoices.length === 0) {
+        router.push({ pathname: "/request-address", params: { providerId: activeProvider.id, general: "1" } } as never);
+        return;
+      }
+      Alert.alert(
+        "اختيار العنوان",
+        "أدخل العنوان الذي ستستقبل فيه مقدم الخدمة، أو أدخل عنوانًا نصيًا جديدًا.",
+        [
+          { text: "عنوان نصي جديد", style: "default", onPress: () => router.push({ pathname: "/request-address", params: { providerId: activeProvider.id, general: "1" } } as never) },
+          ...addressChoices.map((address) => ({ text: address.addressLabel, onPress: () => submitRequest(address.addressLabel) })),
+          { text: "إلغاء", style: "cancel" },
+        ],
+      );
+      return;
+    }
     const totalLabel = `المبلغ الإجمالي: ${totalSelectedPrice.toLocaleString("ar-EG")} د.ل`;
     if (isOnlineService) {
       Alert.alert(
@@ -207,11 +229,12 @@ export default function DoctorDetailScreen() {
 
   const promptAddressAndSubmitFallback = () => {
     if (!activeProvider) return;
-    router.push({ pathname: "/request-address", params: { providerId: activeProvider.id } } as never);
+    router.push({ pathname: "/request-address", params: { providerId: activeProvider.id, general: generalMode ? "1" : undefined } } as never);
   };
 
   const submitRequest = async (addressLabel: string, addressDetails?: string) => {
-    if (!activeProvider || selectedServices.size === 0 || submitting) return;
+    if (!activeProvider || submitting) return;
+    if (!isGeneralRequest && selectedServices.size === 0) return;
     const profile = await getPatientProfile();
     if (!profile) {
       Alert.alert("البيانات غير مكتملة", "أكمل بيانات حسابك من صفحة حسابي ثم أعد المحاولة.");
@@ -234,7 +257,8 @@ export default function DoctorDetailScreen() {
           price: service.price,
           durationMinutes: service.durationMinutes,
         })),
-        total: totalSelectedPrice,
+        total: isGeneralRequest ? 0 : totalSelectedPrice,
+        notes: isGeneralRequest ? (addressDetails ?? undefined) : undefined,
         paymentMethod: chosenPaymentMethod ?? undefined,
       });
       await createNotification({
@@ -399,23 +423,33 @@ export default function DoctorDetailScreen() {
           ) : (
             <View style={styles.emptySection}>
               <MaterialIcons name="info-outline" size={24} color="#8A8173" />
-              <Text style={styles.emptyText}>مقدم الخدمة غير متاح حاليًا أو انتهت بياناته.</Text>
+              <Text style={styles.emptyText}>
+                {provider ? "لم يُفعّل مقدم الخدمة خدماته بعد، أو يمكنك مراسلته بوصف احتياجك مباشرة بدون اختيار خدمة محددة." : "مقدم الخدمة غير متاح حاليًا."}
+              </Text>
               <Pressable accessibilityRole="button" onPress={() => router.back()} style={({ pressed }) => [styles.backToListButton, pressed && styles.pressed]}>
                 <Text style={styles.backToListText}>العودة إلى نتائج البحث</Text>
               </Pressable>
+              {provider ? (
+                <Pressable accessibilityRole="button" onPress={() => router.push({ pathname: "/request-address", params: { providerId: provider.id, general: "1" } } as never)} style={({ pressed }) => [styles.generalRequestButton, pressed && styles.pressed]}>
+                  <Text style={styles.generalRequestText}>إرسال طلب عام لمقدم الخدمة</Text>
+                  <MaterialIcons name="arrow-back" size={20} color="#FFFFFF" />
+                </Pressable>
+              ) : null}
             </View>
           )}
         </ScrollView>
 
-          {activeProvider && selectedServices.size > 0 ? (
+          {activeProvider && (selectedServices.size > 0 || generalMode) ? (
           <View style={styles.submitBar}>
-            <View style={styles.totalCopy}>
-              <Text style={styles.totalLabel}>إجمالي الخدمات المختارة</Text>
-              <Text style={styles.totalValue}>{totalSelectedPrice} د.ل</Text>
-            </View>
-            <Pressable accessibilityRole="button" accessibilityLabel="إرسال الطلب للخدمات المختارة" onPress={promptAddressAndSubmit} disabled={submitting} style={({ pressed }) => [styles.submitButton, submitting && styles.submitDisabled, pressed && styles.submitPressed]}>
+            {isGeneralRequest ? null : (
+              <View style={styles.totalCopy}>
+                <Text style={styles.totalLabel}>إجمالي الخدمات المختارة</Text>
+                <Text style={styles.totalValue}>{totalSelectedPrice} د.ل</Text>
+              </View>
+            )}
+            <Pressable accessibilityRole="button" accessibilityLabel="إرسال الطلب لمقدم الخدمة" onPress={promptAddressAndSubmit} disabled={submitting} style={({ pressed }) => [styles.submitButton, submitting && styles.submitDisabled, pressed && styles.submitPressed]}>
               {submitting ? <Text style={styles.submitDisabledText}>جارٍ الإرسال...</Text> : (
-            <Text style={styles.submitButtonText}>إرسال الطلب ({selectedServices.size})</Text>
+                <Text style={styles.submitButtonText}>{isGeneralRequest ? "إرسال الطلب" : `إرسال الطلب (${selectedServices.size})`}</Text>
               )}
             </Pressable>
           </View>
@@ -478,6 +512,8 @@ const styles = StyleSheet.create({
   submitDisabledText: { color: "#FFFFFF", fontSize: 13, fontWeight: "800" },
   submitButtonText: { color: "#FFFFFF", fontSize: 13, fontWeight: "800" },
   submitPressed: { opacity: 0.9, transform: [{ scale: 0.97 }] },
+  generalRequestButton: { alignItems: "center", backgroundColor: "#6B7B3F", borderRadius: 14, flexDirection: "row-reverse", gap: 7, justifyContent: "center", minHeight: 50, marginTop: 12, paddingHorizontal: 16 },
+  generalRequestText: { color: "#FFFFFF", fontSize: 15, fontWeight: "800" },
   pressed: { opacity: 0.78, transform: [{ scale: 0.98 }] },
   ratingHeader: { alignItems: "center", flexDirection: "row-reverse", justifyContent: "space-between" },
   averageBlock: { alignItems: "center", backgroundColor: "#FBF7EC", borderRadius: 12, flexDirection: "row-reverse", gap: 5, paddingHorizontal: 10, paddingVertical: 6 },

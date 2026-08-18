@@ -26,7 +26,7 @@ export default function RequestAddressScreen() {
     }
     router.push({
       pathname: "/doctor-detail",
-      params: { providerId, addressDetails: details },
+      params: { providerId, addressDetails: details, general: "1" },
     } as never);
   };
 
