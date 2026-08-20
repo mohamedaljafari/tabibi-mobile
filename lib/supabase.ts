@@ -5,11 +5,14 @@ import { createClient } from "@supabase/supabase-js";
  * يُبنى عميل `anon` علنيًا آمنًا من خلال سياسات RLS؛ لا يُستخدم service key
  * أبدًا داخل واجهات العميل المنشورة.
  */
-export const SUPABASE_URL =
-  process.env.EXPO_PUBLIC_SUPABASE_URL ?? "https://fcjfkvlptuxylejmjbkh.supabase.co";
-export const SUPABASE_ANON_KEY =
-  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ??
-  "sb_publishable_Nx_xaH5iqB-udxMlzXcEmw_DDrWq0wx";
+/**
+ * ملاحظة أمنية: لا تُضمَّن أي قيمة احتياطية سرية داخل الكود المنشور
+ * (fallback). عند غياب المتغيرات البيئية يتوقف التطبيق برسالة إعداد واضحة.
+ * المفاتيح تُزوَّد عبر Secrets المنصة (EXPO_PUBLIC_SUPABASE_URL /
+ * EXPO_PUBLIC_SUPABASE_ANON_KEY) قبل البناء أو التشغيل.
+ */
+export const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL ?? "";
+export const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? "";
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: { persistSession: false },
@@ -52,18 +55,21 @@ function hashToken(token: string): string {
   return [h1, h2, h3, h4].map((x) => (x >>> 0).toString(16).padStart(8, "0")).join("");
 }
 
+/**
+ * توليد رمز جلسة بأمان تشفيري دائمًا.
+ * - native: expo-crypto (موجود دائمًا)
+ * - web: crypto.getRandomValues
+ * - لا يوجد أبدًا سقوط إلى Math.random
+ */
 export function newSessionToken(): string {
   const bytes = new Uint8Array(32);
-  // في بيئة الويب قد لا يكون crypto.getRandomValues متاحًا دائمًا؛ نوفر بديلًا
-  const rnd =
-    typeof globalThis.crypto !== "undefined" && globalThis.crypto.getRandomValues
-      ? globalThis.crypto.getRandomValues(bytes)
-      : (() => {
-          for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
-          return bytes;
-        })();
+  // expo-crypto يوفر مولّدًا آمنًا على native وweb (موك في الاختبار)
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const expoCrypto = require("expo-crypto");
+  const raw = expoCrypto.getRandomBytes(32) as Uint8Array;
+  bytes.set(raw);
   return (
-    Array.from(rnd)
+    Array.from(bytes)
       .map((b) => b.toString(16).padStart(2, "0"))
       .join("") +
     Date.now().toString(36)

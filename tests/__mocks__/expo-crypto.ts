@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "crypto";
+import { createHash, randomBytes, pbkdf2 as nodePbkdf2 } from "crypto";
 
 export enum CryptoDigestAlgorithm {
   SHA1 = "SHA-1",
@@ -32,4 +32,46 @@ export function getRandomValues(array: Uint8Array): Uint8Array {
     array[index] = values[index];
   }
   return array;
+}
+
+type CryptoDigestAlgorithmName =
+  | CryptoDigestAlgorithm
+  | "SHA-1"
+  | "SHA-256"
+  | "SHA-384"
+  | "SHA-512";
+
+export type CryptoDigestOptionsExtended = {
+  encoding?: CryptoEncoding;
+};
+
+export type CryptoKdfOptions = {
+  encoding?: CryptoEncoding;
+};
+
+export async function pbkdf2Async(
+  password: string,
+  salt: string,
+  iterations: number,
+  keyByteLength: number,
+  algorithm: CryptoDigestAlgorithmName,
+  options: CryptoKdfOptions = {},
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const nodeAlgorithm = algorithm === "SHA-256" ? "sha256" : algorithm === "SHA-1" ? "sha1" : "sha512";
+    nodePbkdf2(
+      password,
+      salt,
+      iterations,
+      keyByteLength,
+      nodeAlgorithm,
+      (err, key) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        resolve(options.encoding === CryptoEncoding.BASE64 ? key!.toString("base64") : key!.toString("hex"));
+      },
+    );
+  });
 }

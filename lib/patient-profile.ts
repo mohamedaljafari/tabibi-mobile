@@ -1,3 +1,4 @@
+import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export const PATIENT_PROFILE_KEY = "tabibi.patient-profile.v1";
@@ -145,28 +146,106 @@ export function hashPassword(password: string): number {
 }
 
 /**
- * تجزئة تشفيرية قوية (SHA-256) مع مفتاح عشوائي (salt) لكل حساب.
- * تحل محل الدالة الضعيفة القديمة (djb2) التي تعيد number وتعرض للتصادم.
- * الشكل: "sha256:{salt-hex}:{hex-digest}"
+ * تجزئة تشفيرية قوية (PBKDF2-SHA256 × 100,000) مع مفتاح عشوائي (salt) لكل حساب.
+ * ترقية الدالة السابقة (SHA-256 بتكرار واحد) التي كانت معرضة لكسر الهاش.
+ * الشكل: "pbkdf2:{salt-hex}:{hex-digest}"
+ * ملاحظة التوافق: هذه النسخة مقبولة من الشريك (lib/password.ts) بالشكل نفسه
+ * حتى يتمكن المستخدم من تسجيل الدخول في التطبيقين بنفس كلمة المرور.
  */
+const PBKDF2_ITERATIONS = 100_000;
+
+function randomSaltHex(): string {
+  return Array.from(
+    Platform.OS === "web"
+      ? globalThis.crypto.getRandomValues(new Uint8Array(16))
+      : (Array.from(new Array(16)) as number[]).map(() => Math.floor(Math.random() * 256)),
+  )
+    .map((b: number) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+let cachedExpoCrypto: Record<string, unknown> | null = null;
+
+/** تحميل expo-crypto بتأجيل (lazy) لتجنب تحويل Rollup SSR لكود غير صالح */
+async function loadExpoCrypto(): Promise<Record<string, unknown>> {
+  if (!cachedExpoCrypto) {
+    cachedExpoCrypto = await import("expo-crypto");
+  }
+  return cachedExpoCrypto;
+}
+
 export async function hashPasswordStrong(password: string, salt?: string): Promise<string> {
-  const { getRandomBytesAsync, digestStringAsync, CryptoDigestAlgorithm, CryptoEncoding } = await import("expo-crypto");
-  const saltHex = salt ?? Array.from(await getRandomBytesAsync(16)).map((byte: number) => byte.toString(16).padStart(2, "0")).join("");
-  const digestHex = await digestStringAsync(CryptoDigestAlgorithm.SHA256, `${saltHex}:${password}`, { encoding: CryptoEncoding.HEX });
-  return `sha256:${saltHex}:${digestHex}`;
+  const saltHex = salt ?? randomSaltHex();
+  if (Platform.OS === "web") {
+    const encoder = new TextEncoder();
+    const keyMaterial = await globalThis.crypto.subtle.importKey("raw", encoder.encode(password), { name: "PBKDF2" }, false, ["deriveBits"]);
+    const bits = await globalThis.crypto.subtle.deriveBits({ name: "PBKDF2", salt: hexToBytes(saltHex), iterations: PBKDF2_ITERATIONS, hash: "SHA-256" }, keyMaterial, 256);
+    const digestHex = Array.from(new Uint8Array(bits as ArrayBuffer)).map((b: number) => b.toString(16).padStart(2, "0")).join("");
+    return `pbkdf2:${saltHex}:${digestHex}`;
+  }
+  const Crypto = await loadExpoCrypto();
+  if (typeof Crypto.pbkdf2Async !== "function") {
+    throw new Error("expo-crypto لا يدعم pbkdf2Async — استخدم SubtleCrypto بدلاً منه");
+  }
+  const safeSaltHex = saltHex ?? Array.from((await (Crypto.getRandomBytesAsync as (n: number) => Promise<Uint8Array>)(16)) as unknown as number[]).map((b) => b.toString(16).padStart(2, "0")).join("");
+  const digestHex = await (Crypto.pbkdf2Async as (password: string, salt: string, iterations: number, keyLength: number, algorithm: string, options: Record<string, unknown>) => Promise<string>)(
+    password,
+    safeSaltHex,
+    PBKDF2_ITERATIONS,
+    32,
+    "SHA-256",
+    { encoding: "hex" },
+  );
+  return `pbkdf2:${safeSaltHex}:${digestHex}`;
 }
 
 export function isStrongHash(value: unknown): value is string {
-  return typeof value === "string" && /^sha256:[0-9a-f]{32}:/.test(value);
+  return (
+    typeof value === "string" &&
+    (/^pbkdf2:[0-9a-f]{32}:/.test(value) || /^sha256:[0-9a-f]{32}:/.test(value))
+  );
 }
 
-/** التحقق من كلمة المرور: يقبل الشكل القوي الجديد والشكل القديم للترحيل التدريجي */
-export async function verifyPassword(stored: unknown, password: string): Promise<boolean> {
-  if (isStrongHash(stored)) {
+/** التحقق من كلمة المرور: PBKDF2 الحديث، SHA-256 القديم، وdjb2 الأقدم — جميعها تقبل الترحيل التدريجي */
+export async function verifyPassword(
+  stored: unknown,
+  password: string,
+): Promise<boolean> {
+  if (typeof stored === "string" && /^pbkdf2:[0-9a-f]{32}:/.test(stored)) {
     const [, saltHex] = stored.split(":");
     return (await hashPasswordStrong(password, saltHex)) === stored;
   }
-  return typeof stored === "number" && stored === hashPassword(password);
+  if (typeof stored === "string" && /^sha256:[0-9a-f]{32}:/.test(stored)) {
+    // ترقية تلقائية من SHA-256 إلى PBKDF2 بعد التحقق الناجح
+    const [, saltHex] = stored.split(":");
+    const { digestStringAsync, CryptoDigestAlgorithm, CryptoEncoding } = await import("expo-crypto");
+    const digestHex = await digestStringAsync(CryptoDigestAlgorithm.SHA256, `${saltHex}:${password}`, { encoding: CryptoEncoding.HEX });
+    if (`sha256:${saltHex}:${digestHex}` !== stored) return false;
+    try {
+      await updatePatientPasswordStrong(password);
+    } catch {
+      // الترقية لا يجب أن تمنع تسجيل الدخول
+    }
+    return true;
+  }
+  if (typeof stored === "number" && stored === hashPassword(password)) {
+    // ترقية تلقائية من djb2 إلى PBKDF2 بعد التحقق الناجح
+    try {
+      await updatePatientPasswordStrong(password);
+    } catch {
+      // الترقية لا يجب أن تمنع تسجيل الدخول
+    }
+    return true;
+  }
+  return false;
+}
+
+function hexToBytes(hex: string): Uint8Array<ArrayBuffer> {
+  const bytes = new Uint8Array(hex.length / 2) as Uint8Array<ArrayBuffer>;
+  for (let i = 0; i < hex.length; i += 2) {
+    bytes[i / 2] = parseInt(hex.slice(i, i + 2), 16);
+  }
+  return bytes;
 }
 
 export async function savePatientProfile(input: RegistrationInput): Promise<PatientProfile> {

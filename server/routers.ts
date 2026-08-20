@@ -1,6 +1,7 @@
 import { COOKIE_NAME } from "../shared/const.js";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
+import { tabibiRouter } from "./tabibi-router";
 import { publicProcedure, router } from "./_core/trpc";
 
 export const appRouter = router({
@@ -16,6 +17,9 @@ export const appRouter = router({
       } as const;
     }),
   }),
+
+  // البيانات المشتركة بين تطبيق المريض وتطبيق الشريك ولوحة التحكم (محل Supabase القديم)
+  tabibi: tabibiRouter,
 
   // TODO: add feature routers here, e.g.
   // todo: router({
