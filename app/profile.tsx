@@ -6,7 +6,7 @@ import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { FormField } from "@/components/form-field";
 import { ScreenContainer } from "@/components/screen-container";
 import { createFamilyMemberDraft, removeFamilyMemberDraft, type FamilyMemberDraft } from "@/lib/account-setup";
-import { getAuthState } from "@/lib/auth-supabase";
+import { getAuthState } from "@/lib/_core/tabibi-api";
 import { getLibyaCities } from "@/lib/libya-cities";
 import {
   addPatientAddress,
@@ -18,8 +18,8 @@ import {
   type AddressPayload,
   type MedicalRecordPayload,
   type SetupPayload,
-} from "@/lib/records-supabase";
-import type { TabibiUser } from "@/lib/supabase";
+} from "@/lib/_core/tabibi-api";
+import type { TabibiUser } from "@/lib/_core/tabibi-api";
 
 export default function ProfileScreen() {
   const [user, setUser] = useState<TabibiUser | null>(null);

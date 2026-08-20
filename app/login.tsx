@@ -15,8 +15,7 @@ import * as Haptics from "expo-haptics";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { TabibiBrand } from "@/components/tabibi-logo";
-import { signInWithPhone } from "@/lib/auth-supabase";
-import { readPatientSetup } from "@/lib/records-supabase";
+import { signInWithPhone, readPatientSetup } from "@/lib/_core/tabibi-api";
 import { normalizePhone } from "@/lib/patient-profile";
 
 export default function LoginScreen() {
@@ -49,7 +48,7 @@ export default function LoginScreen() {
       if (Platform.OS !== "web") {
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
-      // حالة إكمال إعداد الحساب محفوظة في Supabase وتُقرأ هنا لتحديد الوجهة.
+      // حالة إكمال إعداد الحساب محفوظة في السجلات المشتركة وتُقرأ هنا لتحديد الوجهة.
       let isSetupComplete = false;
       try {
         const setup = await readPatientSetup(result.user);

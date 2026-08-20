@@ -5,7 +5,7 @@ import { router } from "expo-router";
 import { FormField } from "@/components/form-field";
 import { ScreenContainer } from "@/components/screen-container";
 import { TabibiBrand } from "@/components/tabibi-logo";
-import { registerWithPhone } from "@/lib/auth-supabase";
+import { registerWithPhone } from "@/lib/_core/tabibi-api";
 import { hasRegistrationErrors, validateRegistration, type RegistrationInput, type RegistrationValidation } from "@/lib/patient-profile";
 
 const INITIAL_FORM: RegistrationInput = { fullName: "", phone: "", password: "", confirmPassword: "" };

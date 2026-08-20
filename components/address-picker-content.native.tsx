@@ -6,8 +6,8 @@ import * as Location from "expo-location";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { addPatientAddress, type AddressSource } from "@/lib/patient-profile";
-import { getAuthState } from "@/lib/auth-supabase";
-import { addPatientAddress as addSupabaseAddress } from "@/lib/records-supabase";
+import { getAuthState } from "@/lib/_core/tabibi-api";
+import { addPatientAddress as addSupabaseAddress } from "@/lib/_core/tabibi-api";
 import {
   getLibyaCities,
   getEnabledCities,

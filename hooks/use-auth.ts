@@ -27,12 +27,12 @@ export function useAuth(options?: UseAuthOptions) {
 
         if (apiUser) {
           const userInfo: Auth.User = {
-            id: apiUser.id,
-            openId: apiUser.openId,
-            name: apiUser.name,
-            email: apiUser.email,
-            loginMethod: apiUser.loginMethod,
-            lastSignedIn: new Date(apiUser.lastSignedIn),
+            id: String(apiUser.id),
+            phone: apiUser.phone || "",
+            role: (apiUser.role as Auth.User["role"]) || "patient",
+            displayName: apiUser.name || apiUser.display_name || "",
+            status: apiUser.status || "active",
+            metadata: apiUser.metadata || {},
           };
           setUser(userInfo);
           // Cache user info in localStorage for faster subsequent loads
@@ -87,6 +87,9 @@ export function useAuth(options?: UseAuthOptions) {
       console.error("[Auth] Logout API call failed:", err);
       // Continue with logout even if API call fails
     } finally {
+      // Native sign-out also revokes the tabibi session on the local backend.
+      const { signOut } = await import("@/lib/_core/tabibi-api");
+      await signOut().catch(() => undefined);
       await Auth.removeSessionToken();
       await Auth.clearUserInfo();
       setUser(null);

@@ -1,14 +1,17 @@
 import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
-import { SESSION_TOKEN_KEY, USER_INFO_KEY } from "@/constants/oauth";
+import { SESSION_TOKEN_KEY } from "@/constants/oauth";
+
+/** Local storage key for cached user info (Manus runtime key removed). */
+const USER_INFO_KEY = "tabibi.user-info.v1";
 
 export type User = {
-  id: number;
-  openId: string;
-  name: string | null;
-  email: string | null;
-  loginMethod: string | null;
-  lastSignedIn: Date;
+  id: string;
+  phone: string;
+  role: "patient" | "provider" | "admin";
+  displayName: string;
+  status: string;
+  metadata: Record<string, unknown>;
 };
 
 export async function getSessionToken(): Promise<string | null> {
