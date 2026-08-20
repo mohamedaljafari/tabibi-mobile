@@ -141,6 +141,14 @@ export async function deleteSessionToken(token: string): Promise<void> {
 }
 
 /** حذف كل جلسات مستخدم معين (عند تغيير كلمة المرور أو إيقاف الحساب). */
+export async function deleteUser(userId: string): Promise<void> {
+  const db = await requireDb();
+  if (!db) return;
+  await db.delete(tabibiSessions).where(eq(tabibiSessions.userId, userId));
+  await db.delete(tabibiRecords).where(eq(tabibiRecords.ownerKey, userId));
+  await db.delete(tabibiUsers).where(eq(tabibiUsers.id, userId));
+}
+
 export async function deleteUserSessions(userId: string): Promise<void> {
   const db = await requireDb();
   if (!db) return;

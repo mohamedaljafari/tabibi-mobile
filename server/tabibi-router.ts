@@ -98,6 +98,31 @@ export const tabibiRouter = router({
     return requireTabibiUser(ctx.req.headers.authorization);
   }),
 
+  /** بحث مستخدم حسب الهاتف (الشريك/اللوحة يحتاجانه). */
+  getUserByPhone: publicProcedure
+    .input(z.object({ phone: z.string().min(8) }))
+    .query(async ({ input }) => {
+      return (await T.findUserByPhone(input.phone)) ?? null;
+    }),
+
+  /** تسجيل جلسة دون إعادة إدخال كلمة المرور: يُستدعى من الشريك بعد التحقق المحلي من الهاش المخزن. */
+  createSession: publicProcedure
+    .input(z.object({ userId: z.string().min(1), token: z.string().min(20) }))
+    .mutation(async ({ input }) => {
+      const user = await T.getUserById(input.userId);
+      if (!user) throw new TRPCError({ code: "NOT_FOUND", message: "الحساب غير موجود" });
+      await T.createTabibiSession({ id: user.id, role: user.role }, input.token);
+      return { user, token: input.token } as const;
+    }),
+
+  /** حذف جلسات (تسجيل الخروج). */
+  deleteSessions: publicProcedure
+    .input(z.object({ token: z.string().min(10) }))
+    .mutation(async ({ input }) => {
+      await T.deleteSessionToken(input.token);
+      return { success: true } as const;
+    }),
+
   /** جلب مستخدم بمعرفه المباشر (الشريك/اللوحة يحتاجانه). */
   getUserById: publicProcedure
     .input(z.object({ userId: z.string().min(1) }))
@@ -117,6 +142,14 @@ export const tabibiRouter = router({
     .input(z.object({ userId: z.string(), passwordHash: z.string().min(20) }))
     .mutation(async ({ input }) => {
       await T.updateUserPasswordHash(input.userId, input.passwordHash);
+      return { success: true } as const;
+    }),
+
+  /** حذف حساب وجميع جلساته وسجلاته (للإدارة واختبارات التنظيف). */
+  deleteAccount: publicProcedure
+    .input(z.object({ userId: z.string().min(1) }))
+    .mutation(async ({ input }) => {
+      await T.deleteUser(input.userId);
       return { success: true } as const;
     }),
 
